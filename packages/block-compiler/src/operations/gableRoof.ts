@@ -3,11 +3,18 @@ import type { BlockVolume } from '../BlockVolume';
 import { sortPair } from '../BlockVolume';
 import type { CompileContext } from '../compileBuildSpec';
 
-export function gableRoof(
-  volume: BlockVolume,
-  op: GableRoofOperation,
-  ctx: CompileContext,
-): void {
+function withFacing(state: string, facing: 'north' | 'south' | 'east' | 'west'): string {
+  const match = state.match(/^(.*?)(?:\[([^\]]*)\])?$/);
+  const name = match?.[1] ?? state;
+  if (!name.endsWith('_stairs')) return state;
+  const properties = (match?.[2] ?? '')
+    .split(',')
+    .filter((property) => property && !property.startsWith('facing='));
+  properties.push(`facing=${facing}`);
+  return `${name}[${properties.join(',')}]`;
+}
+
+export function gableRoof(volume: BlockVolume, op: GableRoofOperation, ctx: CompileContext): void {
   const state = ctx.resolveBlock(op.block);
   const oh = op.overhang ?? 0;
   const [x0, x1] = sortPair(op.from[0], op.to[0]);
@@ -24,8 +31,8 @@ export function gableRoof(
       const zr = z1 - layer;
       if (y > y1 || zl > zr) break;
       for (let x = xa; x <= xb; x++) {
-        volume.setBlock(x, y, zl, state);
-        volume.setBlock(x, y, zr, state);
+        volume.setBlock(x, y, zl, withFacing(state, 'south'));
+        volume.setBlock(x, y, zr, withFacing(state, 'north'));
       }
     }
   } else {
@@ -38,8 +45,8 @@ export function gableRoof(
       const xr = x1 - layer;
       if (y > y1 || xl > xr) break;
       for (let z = za; z <= zb; z++) {
-        volume.setBlock(xl, y, z, state);
-        volume.setBlock(xr, y, z, state);
+        volume.setBlock(xl, y, z, withFacing(state, 'east'));
+        volume.setBlock(xr, y, z, withFacing(state, 'west'));
       }
     }
   }

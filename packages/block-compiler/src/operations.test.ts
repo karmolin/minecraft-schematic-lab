@@ -9,10 +9,11 @@ function spec(operations: BuildSpec['operations'], size: BuildSpec['size']): Bui
 describe('operations', () => {
   it('wall_rect places a perimeter when hollow and a full slab when solid', () => {
     const perimeter = compileBuildSpec(
-      spec(
-        [{ type: 'wall_rect', from: [0, 0, 0], to: [4, 0, 4], block: 'minecraft:stone' }],
-        { x: 5, y: 1, z: 5 },
-      ),
+      spec([{ type: 'wall_rect', from: [0, 0, 0], to: [4, 0, 4], block: 'minecraft:stone' }], {
+        x: 5,
+        y: 1,
+        z: 5,
+      }),
     );
     expect(perimeter.blockCount).toBe(16); // 25 - inner 9
 
@@ -63,7 +64,15 @@ describe('operations', () => {
   it('gable_roof along z slopes from the eaves to the ridge', () => {
     const result = compileBuildSpec(
       spec(
-        [{ type: 'gable_roof', from: [0, 0, 0], to: [4, 2, 6], axis: 'z', block: 'minecraft:stone' }],
+        [
+          {
+            type: 'gable_roof',
+            from: [0, 0, 0],
+            to: [4, 2, 6],
+            axis: 'z',
+            block: 'minecraft:stone',
+          },
+        ],
         { x: 5, y: 3, z: 7 },
       ),
     );
@@ -71,6 +80,25 @@ describe('operations', () => {
     expect(result.volume.getBlock(0, 0, 3)).toBe('minecraft:stone');
     expect(result.volume.getBlock(4, 0, 3)).toBe('minecraft:stone');
     expect(result.volume.getBlock(2, 2, 3)).toBe('minecraft:stone');
+  });
+
+  it('orients gable roof stairs away from the ridge', () => {
+    const result = compileBuildSpec(
+      spec(
+        [
+          {
+            type: 'gable_roof',
+            from: [0, 0, 0],
+            to: [4, 2, 6],
+            axis: 'x',
+            block: 'minecraft:spruce_stairs',
+          },
+        ],
+        { x: 5, y: 3, z: 7 },
+      ),
+    );
+    expect(result.volume.getBlock(2, 0, 0)).toBe('minecraft:spruce_stairs[facing=south]');
+    expect(result.volume.getBlock(2, 0, 6)).toBe('minecraft:spruce_stairs[facing=north]');
   });
 
   it('window_pattern carves glass into the wall plane', () => {
@@ -143,11 +171,14 @@ describe('operations', () => {
 
   it('ramp rises along its axis', () => {
     const result = compileBuildSpec(
-      spec([{ type: 'ramp', from: [0, 0, 0], to: [4, 4, 0], axis: 'x', block: 'minecraft:stone' }], {
-        x: 5,
-        y: 5,
-        z: 1,
-      }),
+      spec(
+        [{ type: 'ramp', from: [0, 0, 0], to: [4, 4, 0], axis: 'x', block: 'minecraft:stone' }],
+        {
+          x: 5,
+          y: 5,
+          z: 1,
+        },
+      ),
     );
     expect(result.volume.getBlock(0, 0, 0)).toBe('minecraft:stone');
     expect(result.volume.getBlock(4, 4, 0)).toBe('minecraft:stone');

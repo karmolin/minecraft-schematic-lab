@@ -79,7 +79,8 @@ The first run pulls the tool through `npx`; the 3D preview then opens at <http:/
 ## Using it
 
 - **Change it** — "make the roof brick", "add two towers". The preview refreshes on its own.
-- **Export** — the **Export .schem** button in the browser, or ask Claude (Sponge v2, or v3).
+- **Export** — select **Legacy MCEdit .schematic** for WorldEdit 6 / old FAWE on Minecraft 1.12.x;
+  select Sponge v2/v3 for modern WorldEdit. The browser export button and Claude both support all three.
 - **In Minecraft** — put the `.schem` in your world's `schematics` folder, then `//schem load <name>` and `//paste`.
 - **Versions** — ask Claude to version a build in a folder (needs git).
 - **Updates** — the connector follows `main`; pin a release with `#v0.1.0`, or clear a stale cache with `npm cache clean --force`.
@@ -90,7 +91,7 @@ The first run pulls the tool through `npx`; the 3D preview then opens at <http:/
 | ------------------------------- | :-: | :---------: | -------------------------------- |
 | macOS (Intel / Apple Silicon)   | ✅  |     ✅      |                                  |
 | Windows 10/11 (x64 / ARM64)     | ✅  |     ✅      | `npx` needs `cmd /c` (see Setup) |
-| Linux (x64 / ARM64, incl. musl) | ✅  |     —       | no desktop app on Linux          |
+| Linux (x64 / ARM64, incl. musl) | ✅  |      —      | no desktop app on Linux          |
 
 Node 22+ on every platform; 32-bit isn't supported.
 

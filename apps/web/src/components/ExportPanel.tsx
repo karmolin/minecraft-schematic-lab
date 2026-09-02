@@ -4,29 +4,31 @@ import { useBuildStore } from '../state/useBuildStore';
 
 export function ExportPanel() {
   const build = useBuildStore((s) => s.build);
-  const [version, setVersion] = useState<2 | 3>(2);
+  const [format, setFormat] = useState<'mcedit' | 'sponge-v2' | 'sponge-v3'>('mcedit');
   const ready = Boolean(build?.buildId && build.valid);
+  const extension = format === 'mcedit' ? '.schematic' : '.schem';
 
   return (
     <section className="panel">
       <h2 className="panel-title">Export</h2>
       <label className="field">
         <span>Format</span>
-        <select value={version} onChange={(e) => setVersion(Number(e.target.value) as 2 | 3)}>
-          <option value={2}>Sponge v2 (most compatible)</option>
-          <option value={3}>Sponge v3</option>
+        <select value={format} onChange={(e) => setFormat(e.target.value as typeof format)}>
+          <option value="mcedit">Legacy MCEdit .schematic (WorldEdit 6 / 1.12)</option>
+          <option value="sponge-v2">Sponge v2 .schem (most compatible)</option>
+          <option value="sponge-v3">Sponge v3 .schem</option>
         </select>
       </label>
       <a
         className={ready ? 'btn export-btn' : 'btn export-btn disabled'}
-        href={ready ? api.exportUrl(version) : undefined}
+        href={ready ? api.exportUrl(format) : undefined}
         aria-disabled={!ready}
         download
       >
-        Export .schem
+        Export {extension}
       </a>
       <details className="help">
-        <summary>How to use the .schem in Minecraft</summary>
+        <summary>How to use the {extension} in Minecraft</summary>
         <ol>
           <li>
             Put the file in your world&apos;s <code>schematics</code> folder (WorldEdit / FAWE).

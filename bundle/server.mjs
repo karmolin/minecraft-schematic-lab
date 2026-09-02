@@ -206,9 +206,9 @@ import Fastify from "fastify";
 // apps/server/src/http/routes/exportRoutes.ts
 function registerExportRoutes(app, sm) {
   app.get("/api/session/export.schem", async (request, reply) => {
-    const { version } = request.query;
-    const schematicVersion = version === "3" ? 3 : 2;
-    const { buffer, filename } = await sm.exportSchematic(schematicVersion);
+    const { version, format } = request.query;
+    const schematicFormat = format === "mcedit" ? "mcedit" : version === "3" ? "sponge-v3" : "sponge-v2";
+    const { buffer, filename } = await sm.exportSchematic(schematicFormat);
     return reply.type("application/octet-stream").header("content-disposition", `attachment; filename="${filename}"`).send(buffer);
   });
 }
@@ -1598,18 +1598,21 @@ function registerExportSchematicTool(server, deps) {
     "export_schematic",
     {
       title: "Export schematic",
-      description: "Export the current build to a WorldEdit Sponge .schem file. Returns the filename, size and a download URL the user can click in the browser. Defaults to Sponge v2 (most compatible); pass version 3 for the newer format.",
-      inputSchema: { version: z3.union([z3.literal(2), z3.literal(3)]).optional() }
+      description: "Export the current build for WorldEdit. Use format mcedit for the legacy .schematic format used by WorldEdit 6 / old FAWE on Minecraft 1.12.2. Use sponge-v2 (default) or sponge-v3 for modern .schem files.",
+      inputSchema: {
+        format: z3.enum(["mcedit", "sponge-v2", "sponge-v3"]).optional(),
+        version: z3.union([z3.literal(2), z3.literal(3)]).optional()
+      }
     },
     async (args) => {
       try {
-        const version = args.version ?? 2;
-        const { buffer, filename } = await deps.sessionManager.exportSchematic(version);
+        const format = args.format ?? (args.version === 3 ? "sponge-v3" : "sponge-v2");
+        const { buffer, filename } = await deps.sessionManager.exportSchematic(format);
         return textResult({
           filename,
-          version,
+          format,
           size: buffer.length,
-          downloadUrl: `${deps.config.baseUrl}/api/session/export.schem?version=${version}`
+          downloadUrl: `${deps.config.baseUrl}/api/session/export.schem?format=${format}`
         });
       } catch (error) {
         return errorResult(messageOf(error));
@@ -1913,6 +1916,14 @@ function wallRect(volume, op, ctx) {
 }
 
 // packages/block-compiler/src/operations/gableRoof.ts
+function withFacing(state, facing) {
+  const match = state.match(/^(.*?)(?:\[([^\]]*)\])?$/);
+  const name = match?.[1] ?? state;
+  if (!name.endsWith("_stairs")) return state;
+  const properties = (match?.[2] ?? "").split(",").filter((property) => property && !property.startsWith("facing="));
+  properties.push(`facing=${facing}`);
+  return `${name}[${properties.join(",")}]`;
+}
 function gableRoof(volume, op, ctx) {
   const state = ctx.resolveBlock(op.block);
   const oh = op.overhang ?? 0;
@@ -1928,8 +1939,8 @@ function gableRoof(volume, op, ctx) {
       const zr = z1 - layer;
       if (y > y1 || zl > zr) break;
       for (let x = xa; x <= xb; x++) {
-        volume.setBlock(x, y, zl, state);
-        volume.setBlock(x, y, zr, state);
+        volume.setBlock(x, y, zl, withFacing(state, "south"));
+        volume.setBlock(x, y, zr, withFacing(state, "north"));
       }
     }
   } else {
@@ -1941,8 +1952,8 @@ function gableRoof(volume, op, ctx) {
       const xr = x1 - layer;
       if (y > y1 || xl > xr) break;
       for (let z6 = za; z6 <= zb; z6++) {
-        volume.setBlock(xl, y, z6, state);
-        volume.setBlock(xr, y, z6, state);
+        volume.setBlock(xl, y, z6, withFacing(state, "east"));
+        volume.setBlock(xr, y, z6, withFacing(state, "west"));
       }
     }
   }
@@ -2349,9 +2360,233 @@ function renderIsometric(volume, maxSize = 900) {
   return canvas.toBuffer("image/png");
 }
 
-// apps/server/src/schematic/writeSpongeSchematic.ts
+// apps/server/src/schematic/writeMcEditSchematic.ts
 import { gzipSync } from "node:zlib";
 import nbt from "prismarine-nbt";
+var shortNode = (value) => ({ type: "short", value });
+var byteNode = (value) => ({ type: "byte", value });
+var intNode = (value) => ({ type: "int", value });
+var stringNode = (value) => ({ type: "string", value });
+var byteArrayNode = (value) => ({ type: "byteArray", value });
+function listNode(value) {
+  return { type: "list", value: { type: "compound", value } };
+}
+function signedByte(value) {
+  return value > 127 ? value - 256 : value;
+}
+var DYE_DATA = {
+  white: 0,
+  orange: 1,
+  magenta: 2,
+  light_blue: 3,
+  yellow: 4,
+  lime: 5,
+  pink: 6,
+  gray: 7,
+  light_gray: 8,
+  cyan: 9,
+  purple: 10,
+  blue: 11,
+  brown: 12,
+  green: 13,
+  red: 14,
+  black: 15
+};
+var SIMPLE_BLOCKS = {
+  air: { id: 0, data: 0 },
+  cave_air: { id: 0, data: 0 },
+  void_air: { id: 0, data: 0 },
+  stone: { id: 1, data: 0 },
+  grass_block: { id: 2, data: 0 },
+  dirt: { id: 3, data: 0 },
+  coarse_dirt: { id: 3, data: 1 },
+  podzol: { id: 3, data: 2 },
+  cobblestone: { id: 4, data: 0 },
+  sand: { id: 12, data: 0 },
+  red_sand: { id: 12, data: 1 },
+  gravel: { id: 13, data: 0 },
+  gold_block: { id: 41, data: 0 },
+  iron_block: { id: 42, data: 0 },
+  bricks: { id: 45, data: 0 },
+  bookshelf: { id: 47, data: 0 },
+  obsidian: { id: 49, data: 0 },
+  torch: { id: 50, data: 0 },
+  chest: { id: 54, data: 0 },
+  diamond_block: { id: 57, data: 0 },
+  crafting_table: { id: 58, data: 0 },
+  furnace: { id: 61, data: 0 },
+  glass: { id: 20, data: 0 },
+  lapis_block: { id: 22, data: 0 },
+  snow: { id: 78, data: 0 },
+  ice: { id: 79, data: 0 },
+  netherrack: { id: 87, data: 0 },
+  soul_sand: { id: 88, data: 0 },
+  glowstone: { id: 89, data: 0 },
+  iron_bars: { id: 101, data: 0 },
+  glass_pane: { id: 102, data: 0 },
+  nether_brick: { id: 112, data: 0 },
+  quartz_block: { id: 155, data: 0 },
+  packed_ice: { id: 174, data: 0 }
+};
+var WOOD_DATA = {
+  oak: 0,
+  spruce: 1,
+  birch: 2,
+  jungle: 3,
+  acacia: 0,
+  dark_oak: 1
+};
+var PLANKS_DATA = {
+  oak: 0,
+  spruce: 1,
+  birch: 2,
+  jungle: 3,
+  acacia: 4,
+  dark_oak: 5
+};
+var STAIR_IDS = {
+  oak: 53,
+  stone_brick: 109,
+  brick: 108,
+  spruce: 134,
+  birch: 135,
+  jungle: 136,
+  nether_brick: 114,
+  quartz: 156,
+  acacia: 163,
+  dark_oak: 164
+};
+var FENCE_IDS = {
+  oak: 85,
+  spruce: 188,
+  birch: 189,
+  jungle: 190,
+  dark_oak: 191,
+  acacia: 192
+};
+function parseState(state) {
+  const [rawName, rawProperties] = state.split("[", 2);
+  const properties = {};
+  for (const entry of (rawProperties?.replace(/]$/, "") ?? "").split(",")) {
+    if (!entry) continue;
+    const [key, value] = entry.split("=", 2);
+    if (key && value) properties[key] = value;
+  }
+  return { name: (rawName ?? state).replace(/^minecraft:/, ""), properties };
+}
+function stairData(properties) {
+  const facing = { east: 0, west: 1, south: 2, north: 3 }[properties.facing ?? "east"] ?? 0;
+  return facing + (properties.half === "top" ? 4 : 0);
+}
+function legacyBlock(state) {
+  const { name, properties } = parseState(state);
+  if (SIMPLE_BLOCKS[name]) return SIMPLE_BLOCKS[name];
+  const plank = name.match(/^(oak|spruce|birch|jungle|acacia|dark_oak)_planks$/);
+  if (plank) return { id: 5, data: PLANKS_DATA[plank[1]] ?? 0 };
+  const log = name.match(/^(stripped_)?(oak|spruce|birch|jungle|acacia|dark_oak)_(?:log|wood)$/);
+  if (log) {
+    const wood = log[2];
+    const axis = properties.axis === "x" ? 4 : properties.axis === "z" ? 8 : 0;
+    const woodData = WOOD_DATA[wood] ?? 0;
+    if (wood === "acacia" || wood === "dark_oak") return { id: 162, data: woodData + axis };
+    return { id: 17, data: woodData + axis };
+  }
+  const stairs = name.match(
+    /^(oak|stone_brick|brick|spruce|birch|jungle|nether_brick|quartz|acacia|dark_oak)_stairs$/
+  );
+  if (stairs) return { id: STAIR_IDS[stairs[1]], data: stairData(properties) };
+  const fence = name.match(/^(oak|spruce|birch|jungle|dark_oak|acacia)_fence$/);
+  if (fence) return { id: FENCE_IDS[fence[1]], data: 0 };
+  if (name === "stone_bricks") {
+    return { id: 98, data: { mossy: 1, cracked: 2, chiseled: 3 }[properties.variant ?? ""] ?? 0 };
+  }
+  const wool = name.match(
+    /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_wool$/
+  );
+  if (wool) return { id: 35, data: DYE_DATA[wool[1]] ?? 0 };
+  const concrete = name.match(
+    /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_(concrete|concrete_powder)$/
+  );
+  if (concrete)
+    return {
+      id: concrete[2] === "concrete" ? 251 : 252,
+      data: DYE_DATA[concrete[1]] ?? 0
+    };
+  if (name === "stone_slab" || name === "smooth_stone_slab") return { id: 44, data: 0 };
+  if (name === "oak_slab") return { id: 126, data: 0 };
+  if (name === "spruce_slab") return { id: 126, data: 1 };
+  if (name === "dark_oak_slab") return { id: 126, data: 5 };
+  return null;
+}
+function tileEntity(be) {
+  const value = {
+    id: stringNode(be.id.replace(/^minecraft:/, "")),
+    x: intNode(be.pos[0]),
+    y: intNode(be.pos[1]),
+    z: intNode(be.pos[2])
+  };
+  for (const [key, raw] of Object.entries(be.data)) {
+    if (typeof raw === "string") value[key] = stringNode(raw);
+    else if (typeof raw === "boolean") value[key] = byteNode(raw ? 1 : 0);
+    else if (typeof raw === "number" && Number.isInteger(raw)) value[key] = intNode(raw);
+  }
+  return value;
+}
+async function writeMcEditSchematic(volume, blockEntities = []) {
+  const blocks = [];
+  const data = [];
+  const addBlocks = [];
+  const unsupported = /* @__PURE__ */ new Set();
+  volume.forEachYZX((_x, _y, _z, state) => {
+    const block = legacyBlock(state);
+    if (!block) {
+      unsupported.add(state);
+      blocks.push(0);
+      data.push(0);
+      addBlocks.push(0);
+      return;
+    }
+    blocks.push(block.id & 255);
+    data.push(block.data & 15);
+    addBlocks.push(block.id >> 8 & 15);
+  });
+  if (unsupported.size > 0) {
+    throw new Error(
+      `Legacy .schematic cannot represent these blocks for Minecraft 1.12.2: ${[...unsupported].sort().join(", ")}`
+    );
+  }
+  const value = {
+    Materials: stringNode("Alpha"),
+    Width: shortNode(volume.x),
+    Height: shortNode(volume.y),
+    Length: shortNode(volume.z),
+    WEOriginX: intNode(0),
+    WEOriginY: intNode(0),
+    WEOriginZ: intNode(0),
+    WEOffsetX: intNode(0),
+    WEOffsetY: intNode(0),
+    WEOffsetZ: intNode(0),
+    Blocks: byteArrayNode(blocks.map(signedByte)),
+    Data: byteArrayNode(data.map(signedByte)),
+    Entities: listNode([]),
+    TileEntities: listNode(blockEntities.map(tileEntity))
+  };
+  if (addBlocks.some((high) => high !== 0)) {
+    const packed = [];
+    for (let i = 0; i < addBlocks.length; i += 2) {
+      packed.push(signedByte((addBlocks[i] ?? 0) | (addBlocks[i + 1] ?? 0) << 4));
+    }
+    value.AddBlocks = byteArrayNode(packed);
+  }
+  const root = { type: "compound", name: "Schematic", value };
+  return gzipSync(
+    nbt.writeUncompressed(root, "big")
+  );
+}
+
+// apps/server/src/schematic/writeSpongeSchematic.ts
+import { gzipSync as gzipSync2 } from "node:zlib";
+import nbt2 from "prismarine-nbt";
 
 // apps/server/src/schematic/schematicTypes.ts
 var DATA_VERSIONS = {
@@ -2375,12 +2610,12 @@ function dataVersionFor(version) {
 }
 
 // apps/server/src/schematic/writeSpongeSchematic.ts
-var intNode = (value) => ({ type: "int", value });
-var shortNode = (value) => ({ type: "short", value });
-var stringNode = (value) => ({ type: "string", value });
-var byteNode = (value) => ({ type: "byte", value });
+var intNode2 = (value) => ({ type: "int", value });
+var shortNode2 = (value) => ({ type: "short", value });
+var stringNode2 = (value) => ({ type: "string", value });
+var byteNode2 = (value) => ({ type: "byte", value });
 var intArrayNode = (value) => ({ type: "intArray", value });
-var byteArrayNode = (value) => ({ type: "byteArray", value });
+var byteArrayNode2 = (value) => ({ type: "byteArray", value });
 var compoundNode = (value) => ({ type: "compound", value });
 function pushVarint(out, value) {
   let v = value >>> 0;
@@ -2393,10 +2628,10 @@ function pushVarint(out, value) {
   }
 }
 function jsonToNbt(value) {
-  if (typeof value === "string") return stringNode(value);
-  if (typeof value === "boolean") return byteNode(value ? 1 : 0);
+  if (typeof value === "string") return stringNode2(value);
+  if (typeof value === "boolean") return byteNode2(value ? 1 : 0);
   if (typeof value === "number") {
-    return Number.isInteger(value) ? intNode(value) : { type: "double", value };
+    return Number.isInteger(value) ? intNode2(value) : { type: "double", value };
   }
   if (Array.isArray(value)) {
     const items = value.map(jsonToNbt);
@@ -2410,11 +2645,11 @@ function jsonToNbt(value) {
     }
     return compoundNode(out);
   }
-  return stringNode("");
+  return stringNode2("");
 }
 function blockEntityCompound(be, version) {
   const base = {
-    Id: stringNode(be.id),
+    Id: stringNode2(be.id),
     Pos: intArrayNode([be.pos[0], be.pos[1], be.pos[2]])
   };
   const data = jsonToNbt(be.data);
@@ -2437,17 +2672,17 @@ async function writeSpongeSchematic(spec, volume, options = {}) {
     if (id === void 0) {
       id = paletteIndex.size;
       paletteIndex.set(state, id);
-      paletteValue[state] = intNode(id);
+      paletteValue[state] = intNode2(id);
     }
     pushVarint(blockData, id);
   });
   const offset = spec.origin ? [spec.origin.x, spec.origin.y, spec.origin.z] : [0, 0, 0];
   const metadata = compoundNode({
-    Name: stringNode(spec.name),
-    Author: stringNode("minecraft-schematic-lab"),
-    WEOffsetX: intNode(0),
-    WEOffsetY: intNode(0),
-    WEOffsetZ: intNode(0)
+    Name: stringNode2(spec.name),
+    Author: stringNode2("minecraft-schematic-lab"),
+    WEOffsetX: intNode2(0),
+    WEOffsetY: intNode2(0),
+    WEOffsetZ: intNode2(0)
   });
   const beList = {
     type: "list",
@@ -2457,7 +2692,7 @@ async function writeSpongeSchematic(spec, volume, options = {}) {
   if (version === 3) {
     const blocks = {
       Palette: compoundNode(paletteValue),
-      Data: byteArrayNode(blockData)
+      Data: byteArrayNode2(blockData)
     };
     if (blockEntities.length > 0) blocks.BlockEntities = beList;
     root = {
@@ -2465,12 +2700,12 @@ async function writeSpongeSchematic(spec, volume, options = {}) {
       name: "",
       value: {
         Schematic: compoundNode({
-          Version: intNode(3),
-          DataVersion: intNode(dataVersion),
+          Version: intNode2(3),
+          DataVersion: intNode2(dataVersion),
           Metadata: metadata,
-          Width: shortNode(volume.x),
-          Height: shortNode(volume.y),
-          Length: shortNode(volume.z),
+          Width: shortNode2(volume.x),
+          Height: shortNode2(volume.y),
+          Length: shortNode2(volume.z),
           Offset: intArrayNode(offset),
           Blocks: compoundNode(blocks)
         })
@@ -2478,25 +2713,25 @@ async function writeSpongeSchematic(spec, volume, options = {}) {
     };
   } else {
     const value = {
-      Version: intNode(2),
-      DataVersion: intNode(dataVersion),
+      Version: intNode2(2),
+      DataVersion: intNode2(dataVersion),
       Metadata: metadata,
-      Width: shortNode(volume.x),
-      Height: shortNode(volume.y),
-      Length: shortNode(volume.z),
+      Width: shortNode2(volume.x),
+      Height: shortNode2(volume.y),
+      Length: shortNode2(volume.z),
       Offset: intArrayNode(offset),
-      PaletteMax: intNode(paletteIndex.size),
+      PaletteMax: intNode2(paletteIndex.size),
       Palette: compoundNode(paletteValue),
-      BlockData: byteArrayNode(blockData)
+      BlockData: byteArrayNode2(blockData)
     };
     if (blockEntities.length > 0) value.BlockEntities = beList;
     root = { type: "compound", name: "Schematic", value };
   }
-  const uncompressed = nbt.writeUncompressed(
+  const uncompressed = nbt2.writeUncompressed(
     root,
     "big"
   );
-  return gzipSync(uncompressed);
+  return gzipSync2(uncompressed);
 }
 
 // apps/server/src/session/SessionManager.ts
@@ -2673,13 +2908,14 @@ var SessionManager = class {
     }
     return renderIsometric(session.volume);
   }
-  async exportSchematic(version = 2) {
+  async exportSchematic(format = "sponge-v2") {
     const session = this.getCurrent();
     if (!session.spec || !session.volume) {
       throw new HttpError(409, "Nothing to export yet. Create a build first.");
     }
-    const buffer = await this.schematicFor(session, version);
-    const filename = `${safeFilename(session.spec.name || session.spec.id)}.schem`;
+    const buffer = await this.schematicFor(session, format);
+    const extension = format === "mcedit" ? "schematic" : "schem";
+    const filename = `${safeFilename(session.spec.name || session.spec.id)}.${extension}`;
     return { buffer, filename };
   }
   projectStatus() {
@@ -2783,20 +3019,20 @@ var SessionManager = class {
       "README.md": projectReadme(session),
       ".gitignore": "node_modules/\n"
     });
-    const buffer = await this.schematicFor(session, 2);
+    const buffer = await this.schematicFor(session, "sponge-v2");
     writeFileSync2(join2(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
   }
-  async schematicFor(session, version = 2) {
-    const cached = session.schematicCache.get(version);
+  async schematicFor(session, format = "sponge-v2") {
+    const cached = session.schematicCache.get(format);
     if (cached) return cached;
     if (!session.spec || !session.volume) {
       throw new HttpError(409, "Nothing to export yet. Create a build first.");
     }
-    const buffer = await writeSpongeSchematic(session.spec, session.volume, {
-      version,
+    const buffer = format === "mcedit" ? await writeMcEditSchematic(session.volume, session.blockEntities) : await writeSpongeSchematic(session.spec, session.volume, {
+      version: format === "sponge-v3" ? 3 : 2,
       blockEntities: session.blockEntities
     });
-    session.schematicCache.set(version, buffer);
+    session.schematicCache.set(format, buffer);
     return buffer;
   }
   previewFor(session) {

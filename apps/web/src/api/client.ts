@@ -20,5 +20,6 @@ const EXPORT_URL = '/api/session/export.schem';
 export const api = {
   current: () => request<CurrentBuildResponse>('/api/session/current'),
   previewData: () => request<PreviewData>('/api/session/preview-data'),
-  exportUrl: (version: 2 | 3 = 2) => (version === 3 ? `${EXPORT_URL}?version=3` : EXPORT_URL),
+  exportUrl: (format: 'mcedit' | 'sponge-v2' | 'sponge-v3' = 'sponge-v2') =>
+    format === 'sponge-v2' ? EXPORT_URL : `${EXPORT_URL}?format=${format}`,
 };

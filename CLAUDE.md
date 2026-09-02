@@ -26,7 +26,7 @@ else determine whether the project is set up. "Set up" means **all** of these ar
 3. `<REPO>/node_modules` exists.
 4. `<REPO>/apps/web/dist/index.html` exists (the built viewer). NOTE: `dist/` is git-ignored, so a
    fresh checkout never has it — the build step below must run at least once.
-5. The MCP connector `minecraft-schematic-lab` is registered (only relevant for *subsequent* builds —
+5. The MCP connector `minecraft-schematic-lab` is registered (only relevant for _subsequent_ builds —
    see "MCP not live yet" below; the **first** build does not need it).
 
 If any of 1–4 is missing, the project is **not set up**. Do this, in order:
@@ -42,7 +42,7 @@ If any of 1–4 is missing, the project is **not set up**. Do this, in order:
    any **manual command** you still need to run (e.g. connector registration if `claude` isn't on PATH).
 3. If `scripts/setup.sh` is missing for some reason, perform the equivalent steps yourself:
    detect/install Node 22+ via nvm without sudo, `corepack enable pnpm && corepack prepare pnpm@11.6.0
-   --activate`, `pnpm --dir <REPO> install`, `pnpm --dir <REPO> build`.
+--activate`, `pnpm --dir <REPO> install`, `pnpm --dir <REPO> build`.
 4. Never use `sudo`. Never `rm -rf node_modules` or `dist`. If a network step fails (offline), tell the
    user plainly that the first-time setup needs internet, then stop.
 
@@ -64,6 +64,7 @@ The browser auto-open only fires from the **MCP** tools, and a freshly-registere
    script at the repo root — `pnpm --dir <REPO> start` fails with `ERR_PNPM_NO_SCRIPT_OR_SERVER`, so
    always target `apps/server`. Run it detached so it keeps serving; never block your turn on it. Poll
    `/api/health` until it answers. Record the PID (above) — you will stop this server later (step 5).
+
 2. Compose a **BuildSpec** (see "BuildSpec shape" below) and POST it:
    `curl -s -X POST http://127.0.0.1:8765/api/session/build -H 'content-type: application/json' -d '<BuildSpec JSON>'`.
    A default session already exists at startup, so you do **not** need to create one first. On success
@@ -101,34 +102,34 @@ manually, and the MCP server owns port 8765 for you.
 
 ## MCP tools (available once the connector is live)
 
-| Tool | What it does |
-| --- | --- |
-| `create_build` | Compile a BuildSpec, replace the current build, auto-open/refresh the browser. |
-| `apply_patch` | Apply an RFC 6902 JSON Patch to the current spec and rebuild (incremental edits); auto-refreshes. |
-| `validate_build` | Validate a spec without changing the current build. |
-| `get_current_build` | Current spec, stats, warnings, preview URL, project status. |
-| `render_preview` | Compact size + per-block-state counts + URLs. |
-| `render_image` | Isometric **PNG** returned as an image so you can actually see the result. |
-| `export_schematic` | Export `.schem` (v2 default, v3 optional); returns a download URL. |
-| `init_git_project` / `save_version` / `git_branch` / `git_push` | Optional git versioning (needs git installed). |
-| `list_sessions` / `select_session` | Manage independent in-memory builds. |
+| Tool                                                            | What it does                                                                                               |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `create_build`                                                  | Compile a BuildSpec, replace the current build, auto-open/refresh the browser.                             |
+| `apply_patch`                                                   | Apply an RFC 6902 JSON Patch to the current spec and rebuild (incremental edits); auto-refreshes.          |
+| `validate_build`                                                | Validate a spec without changing the current build.                                                        |
+| `get_current_build`                                             | Current spec, stats, warnings, preview URL, project status.                                                |
+| `render_preview`                                                | Compact size + per-block-state counts + URLs.                                                              |
+| `render_image`                                                  | Isometric **PNG** returned as an image so you can actually see the result.                                 |
+| `export_schematic`                                              | Export legacy `.schematic` for WorldEdit 6 / old FAWE, or Sponge `.schem` (v2/v3); returns a download URL. |
+| `init_git_project` / `save_version` / `git_branch` / `git_push` | Optional git versioning (needs git installed).                                                             |
+| `list_sessions` / `select_session`                              | Manage independent in-memory builds.                                                                       |
 
 ## HTTP endpoints you can use directly (no MCP needed)
 
 Base URL `http://127.0.0.1:8765`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/health` | Liveness + version (use to detect the server is up). |
-| POST | `/api/session/build` | Compile a BuildSpec (the **first-build** path). Always HTTP 200; check the `valid` field. |
-| POST | `/api/session/validate` | Validate only. |
-| POST | `/api/session/apply-patch` | RFC 6902 patch + rebuild. Returns **HTTP 422** if the patched spec is invalid. |
-| GET | `/api/session/current` | Current spec + stats + project. |
-| GET | `/api/session/preview-data` | Instanced positions per block state. |
-| GET | `/api/session/preview.png` | Server-rendered isometric PNG. |
-| GET | `/api/session/export.schem?version=2` | Download `.schem` (pass `version=3` for v3). |
-| POST/GET | `/api/session/create` · `list` · `select` · `delete` | Session management. |
-| GET/POST | `/api/project/status` · `init-local` · `init-git` · `save-version` · `branches` · `branch` · `push` | Project / git ops. |
+| Method   | Path                                                                                                | Purpose                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| GET      | `/api/health`                                                                                       | Liveness + version (use to detect the server is up).                                            |
+| POST     | `/api/session/build`                                                                                | Compile a BuildSpec (the **first-build** path). Always HTTP 200; check the `valid` field.       |
+| POST     | `/api/session/validate`                                                                             | Validate only.                                                                                  |
+| POST     | `/api/session/apply-patch`                                                                          | RFC 6902 patch + rebuild. Returns **HTTP 422** if the patched spec is invalid.                  |
+| GET      | `/api/session/current`                                                                              | Current spec + stats + project.                                                                 |
+| GET      | `/api/session/preview-data`                                                                         | Instanced positions per block state.                                                            |
+| GET      | `/api/session/preview.png`                                                                          | Server-rendered isometric PNG.                                                                  |
+| GET      | `/api/session/export.schem?version=2`                                                               | Download Sponge `.schem` (pass `version=3` for v3, or `format=mcedit` for legacy `.schematic`). |
+| POST/GET | `/api/session/create` · `list` · `select` · `delete`                                                | Session management.                                                                             |
+| GET/POST | `/api/project/status` · `init-local` · `init-git` · `save-version` · `branches` · `branch` · `push` | Project / git ops.                                                                              |
 
 ## BuildSpec shape
 
@@ -170,9 +171,7 @@ A minimal **verified-valid** spec:
   "minecraftVersion": "1.21",
   "size": { "x": 3, "y": 3, "z": 3 },
   "palette": { "s": "minecraft:stone" },
-  "operations": [
-    { "type": "box", "from": [0, 0, 0], "to": [2, 2, 2], "block": "s" }
-  ]
+  "operations": [{ "type": "box", "from": [0, 0, 0], "to": [2, 2, 2], "block": "s" }]
 }
 ```
 
@@ -205,4 +204,3 @@ nvm or Homebrew dirs. `scripts/setup.sh` handles this by registering a small gen
 (`scripts/mcp-launch.sh`) that exports the absolute node and pnpm directories onto PATH and execs the
 absolute pnpm. If you ever register the connector by hand, point it at that wrapper (an absolute path),
 not at a bare `pnpm`.
-

@@ -34,7 +34,11 @@ describe('HTTP server', () => {
   });
 
   it('builds the demo spec', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/session/build', payload: fantasyHouseDemo });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/session/build',
+      payload: fantasyHouseDemo,
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.valid).toBe(true);
@@ -59,8 +63,18 @@ describe('HTTP server', () => {
     expect(res.headers['content-disposition']).toContain('.schem');
   });
 
+  it('exports a legacy .schematic download', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/session/export.schem?format=mcedit' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toContain('.schematic');
+  });
+
   it('reports invalid specs without throwing', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/session/build', payload: { nope: true } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/session/build',
+      payload: { nope: true },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().valid).toBe(false);
   });

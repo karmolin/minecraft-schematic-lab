@@ -24,8 +24,9 @@ import type {
 import type { AppConfig } from '../config';
 import { HttpError } from '../httpError';
 import { renderIsometric } from '../render/renderIsometric';
+import { writeMcEditSchematic } from '../schematic/writeMcEditSchematic';
 import { writeSpongeSchematic } from '../schematic/writeSpongeSchematic';
-import type { SchematicVersion } from '../schematic/schematicTypes';
+import type { SchematicFormat } from '../schematic/schematicTypes';
 import type { Session } from './types';
 import type { GitProjectService } from '../git/GitProjectService';
 
@@ -225,13 +226,16 @@ export class SessionManager {
     return renderIsometric(session.volume);
   }
 
-  async exportSchematic(version: SchematicVersion = 2): Promise<{ buffer: Buffer; filename: string }> {
+  async exportSchematic(
+    format: SchematicFormat = 'sponge-v2',
+  ): Promise<{ buffer: Buffer; filename: string }> {
     const session = this.getCurrent();
     if (!session.spec || !session.volume) {
       throw new HttpError(409, 'Nothing to export yet. Create a build first.');
     }
-    const buffer = await this.schematicFor(session, version);
-    const filename = `${safeFilename(session.spec.name || session.spec.id)}.schem`;
+    const buffer = await this.schematicFor(session, format);
+    const extension = format === 'mcedit' ? 'schematic' : 'schem';
+    const filename = `${safeFilename(session.spec.name || session.spec.id)}.${extension}`;
     return { buffer, filename };
   }
 
@@ -350,21 +354,27 @@ export class SessionManager {
       'README.md': projectReadme(session),
       '.gitignore': 'node_modules/\n',
     });
-    const buffer = await this.schematicFor(session, 2);
+    const buffer = await this.schematicFor(session, 'sponge-v2');
     writeFileSync(join(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
   }
 
-  private async schematicFor(session: Session, version: SchematicVersion = 2): Promise<Buffer> {
-    const cached = session.schematicCache.get(version);
+  private async schematicFor(
+    session: Session,
+    format: SchematicFormat = 'sponge-v2',
+  ): Promise<Buffer> {
+    const cached = session.schematicCache.get(format);
     if (cached) return cached;
     if (!session.spec || !session.volume) {
       throw new HttpError(409, 'Nothing to export yet. Create a build first.');
     }
-    const buffer = await writeSpongeSchematic(session.spec, session.volume, {
-      version,
-      blockEntities: session.blockEntities,
-    });
-    session.schematicCache.set(version, buffer);
+    const buffer =
+      format === 'mcedit'
+        ? await writeMcEditSchematic(session.volume, session.blockEntities)
+        : await writeSpongeSchematic(session.spec, session.volume, {
+            version: format === 'sponge-v3' ? 3 : 2,
+            blockEntities: session.blockEntities,
+          });
+    session.schematicCache.set(format, buffer);
     return buffer;
   }
 

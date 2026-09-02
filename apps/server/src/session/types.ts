@@ -1,7 +1,7 @@
 import type { BlockVolume, BlockEntity } from '@minecraft-schematic-lab/block-compiler';
 import type { BuildSpec } from '@minecraft-schematic-lab/build-spec';
 import type { ProjectMode } from '@minecraft-schematic-lab/shared';
-import type { SchematicVersion } from '../schematic/schematicTypes';
+import type { SchematicFormat } from '../schematic/schematicTypes';
 
 export interface SessionProjectGit {
   branch: string | null;
@@ -24,7 +24,7 @@ export interface Session {
   blockCount: number;
   palette: string[];
   blockEntities: BlockEntity[];
-  schematicCache: Map<SchematicVersion, Buffer>;
+  schematicCache: Map<SchematicFormat, Buffer>;
   project: SessionProject;
   createdAt: number;
   updatedAt: number;

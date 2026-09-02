@@ -9,18 +9,21 @@ export function registerExportSchematicTool(server: McpServer, deps: McpDeps): v
     {
       title: 'Export schematic',
       description:
-        'Export the current build to a WorldEdit Sponge .schem file. Returns the filename, size and a download URL the user can click in the browser. Defaults to Sponge v2 (most compatible); pass version 3 for the newer format.',
-      inputSchema: { version: z.union([z.literal(2), z.literal(3)]).optional() },
+        'Export the current build for WorldEdit. Use format mcedit for the legacy .schematic format used by WorldEdit 6 / old FAWE on Minecraft 1.12.2. Use sponge-v2 (default) or sponge-v3 for modern .schem files.',
+      inputSchema: {
+        format: z.enum(['mcedit', 'sponge-v2', 'sponge-v3']).optional(),
+        version: z.union([z.literal(2), z.literal(3)]).optional(),
+      },
     },
     async (args) => {
       try {
-        const version = args.version ?? 2;
-        const { buffer, filename } = await deps.sessionManager.exportSchematic(version);
+        const format = args.format ?? (args.version === 3 ? 'sponge-v3' : 'sponge-v2');
+        const { buffer, filename } = await deps.sessionManager.exportSchematic(format);
         return textResult({
           filename,
-          version,
+          format,
           size: buffer.length,
-          downloadUrl: `${deps.config.baseUrl}/api/session/export.schem?version=${version}`,
+          downloadUrl: `${deps.config.baseUrl}/api/session/export.schem?format=${format}`,
         });
       } catch (error) {
         return errorResult(messageOf(error));

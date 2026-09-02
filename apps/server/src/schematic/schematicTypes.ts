@@ -1,4 +1,5 @@
 export type SchematicVersion = 2 | 3;
+export type SchematicFormat = 'sponge-v2' | 'sponge-v3' | 'mcedit';
 
 /** Minecraft version (major.minor) -> NBT DataVersion. Approximate; used as a hint for WorldEdit. */
 export const DATA_VERSIONS: Record<string, number> = {

@@ -12,7 +12,7 @@ afterEach(() => {
 describe('ExportPanel', () => {
   it('is disabled when there is no build', () => {
     render(<ExportPanel />);
-    const link = screen.getByText('Export .schem');
+    const link = screen.getByText('Export .schematic');
     expect(link.getAttribute('aria-disabled')).toBe('true');
   });
 
@@ -30,8 +30,13 @@ describe('ExportPanel', () => {
       },
     });
     render(<ExportPanel />);
-    const link = screen.getByText('Export .schem');
+    const link = screen.getByText('Export .schematic');
     expect(link.getAttribute('aria-disabled')).toBe('false');
     expect(link.getAttribute('href')).toContain('export.schem');
+  });
+
+  it('offers the legacy WorldEdit 6 format', () => {
+    render(<ExportPanel />);
+    expect(screen.getByText('Legacy MCEdit .schematic (WorldEdit 6 / 1.12)')).toBeTruthy();
   });
 });
