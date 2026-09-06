@@ -48,6 +48,28 @@ body {
   background: var(--panel);
 }
 
+.app-header-right {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.lang-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 8px;
+  transition: color 120ms, border-color 120ms;
+}
+
+.lang-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .app-title {
   margin: 0;
   font-size: 16px;

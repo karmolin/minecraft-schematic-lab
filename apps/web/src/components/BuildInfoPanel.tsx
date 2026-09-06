@@ -1,14 +1,16 @@
 import { colorFor, friendlyBlockName } from '@minecraft-schematic-lab/shared';
+import { useI18n } from '../i18n/I18nContext';
 import { useBuildStore } from '../state/useBuildStore';
 
 export function BuildInfoPanel() {
   const build = useBuildStore((s) => s.build);
+  const { t } = useI18n();
 
   if (!build || !build.buildId) {
     return (
       <section className="panel">
-        <h2 className="panel-title">Build</h2>
-        <p className="muted">Nothing yet — ask Claude to build something.</p>
+        <h2 className="panel-title">{t.build.title}</h2>
+        <p className="muted">{t.build.empty}</p>
       </section>
     );
   }
@@ -16,11 +18,11 @@ export function BuildInfoPanel() {
   const { x, y, z } = build.previewData.size;
   return (
     <section className="panel">
-      <h2 className="panel-title">Build</h2>
+      <h2 className="panel-title">{t.build.title}</h2>
       <dl className="info-grid">
-        <dt>Blocks</dt>
+        <dt>{t.build.blocks}</dt>
         <dd>{build.blockCount.toLocaleString()}</dd>
-        <dt>Size</dt>
+        <dt>{t.build.size}</dt>
         <dd>
           {x} × {y} × {z}
         </dd>

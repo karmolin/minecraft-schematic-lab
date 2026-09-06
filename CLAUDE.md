@@ -193,8 +193,13 @@ context.
 - No `sudo`, ever. Prefer nvm + corepack so setup needs no admin rights.
 - Keep the user informed in plain language at each step; surface validation errors and missing-tool
   messages in their own words.
-- This is a local-only, Claude/MCP-only tool: no double-click launchers, no Electron, no opening
-  network ports beyond loopback 8765.
+- **After any change to `apps/web/src/` you MUST rebuild before `start.bat` reflects the change.**
+  `start.bat` runs `bundle\server.mjs` which embeds a compiled snapshot of the web app. The two-step
+  rebuild is:
+  1. `cd apps/web && node node_modules/vite/bin/vite.js build` (produces `apps/web/dist/`)
+  2. `node scripts/bundle.mjs` (copies `apps/web/dist/` into `bundle/web/dist/` and rebundles the server)
+  On Windows where `pnpm` is not on PATH, run both steps via `D:\nodejs\node.exe` directly as shown.
+  Never claim a UI change is live until both steps have succeeded.
 
 ## Desktop-app PATH caveat
 
