@@ -1,4 +1,24 @@
 export const en = {
+  packs: {
+    title: 'Resource packs',
+    select: 'Preview resource pack',
+    builtin: 'Pixel Perfection CE (bundled)',
+    vanilla: 'Minecraft 1.12.2 default',
+    refresh: 'Refresh',
+    refreshing: 'Refreshing…',
+    loading: 'Loading textures…',
+    ready: 'Ready',
+    keptPrevious: 'Previous preview retained',
+    unavailable: 'Unavailable',
+    directory: 'Resource pack folder',
+    instructions:
+      'Drop a ZIP or unpacked resource pack into this folder. Detected every 5 seconds.',
+    coverage: (custom: number, vanilla: number, missing: number) =>
+      `Block types: pack ${custom} · default ${vanilla} · unsupported ${missing}`,
+    missing: 'Show unsupported blocks',
+    limitations:
+      'First animation frame and model variant; fixed foliage tint. Special renderers are not supported yet.',
+  },
   header: {
     tag: 'driven by Claude · local preview',
     switchLang: '中文',
@@ -43,6 +63,23 @@ export const en = {
 };
 
 export type Messages = {
+  packs: {
+    title: string;
+    select: string;
+    builtin: string;
+    vanilla: string;
+    refresh: string;
+    refreshing: string;
+    loading: string;
+    ready: string;
+    keptPrevious: string;
+    unavailable: string;
+    directory: string;
+    instructions: string;
+    coverage: (custom: number, vanilla: number, missing: number) => string;
+    missing: string;
+    limitations: string;
+  };
   header: { tag: string; switchLang: string };
   claudeHint: { title: string; intro: string; example: string; description: string };
   build: { title: string; empty: string; blocks: string; size: string };

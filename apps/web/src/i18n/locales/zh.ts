@@ -1,6 +1,24 @@
 import type { Messages } from './en';
 
 export const zh: Messages = {
+  packs: {
+    title: '材质包',
+    select: '预览材质包',
+    builtin: 'Pixel Perfection CE（项目内置）',
+    vanilla: 'Minecraft 1.12.2 原版',
+    refresh: '刷新列表 / 重试',
+    refreshing: '刷新中…',
+    loading: '正在加载贴图…',
+    ready: '已就绪',
+    keptPrevious: '已保留上一预览',
+    unavailable: '不可用',
+    directory: '材质包文件夹',
+    instructions: '将 ZIP 或解压文件夹放入下面的目录，每 5 秒自动识别。',
+    coverage: (custom: number, vanilla: number, missing: number) =>
+      `方块种类：材质包 ${custom} · 原版 ${vanilla} · 不支持 ${missing}`,
+    missing: '查看不支持的方块',
+    limitations: '首版使用动画首帧、首个模型变体和固定草叶颜色，暂不支持特殊渲染。',
+  },
   header: {
     tag: '由 Claude 驱动 · 本地预览',
     switchLang: 'English',

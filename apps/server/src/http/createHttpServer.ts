@@ -9,6 +9,7 @@ import { registerExportRoutes } from './routes/exportRoutes';
 import { registerHealthRoutes } from './routes/healthRoutes';
 import { registerProjectRoutes } from './routes/projectRoutes';
 import { registerSessionRoutes } from './routes/sessionRoutes';
+import { registerResourcePackRoutes } from './routes/resourcePackRoutes';
 
 const BODY_LIMIT = 8 * 1024 * 1024;
 
@@ -30,6 +31,7 @@ export async function createHttpServer(
   registerSessionRoutes(app, sm);
   registerExportRoutes(app, sm);
   registerProjectRoutes(app, sm);
+  registerResourcePackRoutes(app, config);
 
   // Serve the built web viewer on the same port (SPA fallback for client-side routes).
   if (existsSync(config.webDist)) {

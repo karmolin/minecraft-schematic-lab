@@ -8,6 +8,7 @@ import { Layout } from './components/Layout';
 import { MaterialsPanel } from './components/MaterialsPanel';
 import { PreviewViewport } from './components/PreviewViewport';
 import { useBuildStore } from './state/useBuildStore';
+import { ResourcePackPanel } from './components/ResourcePackPanel';
 
 function toBuildResult(cur: CurrentBuildResponse, preview: PreviewData): BuildResult {
   return {
@@ -46,6 +47,7 @@ export function App() {
         <>
           <ClaudeHintPanel />
           <BuildInfoPanel />
+          <ResourcePackPanel />
           <MaterialsPanel />
           <ExportPanel />
         </>

@@ -62,7 +62,9 @@ body {
   cursor: pointer;
   font-size: 12px;
   padding: 3px 8px;
-  transition: color 120ms, border-color 120ms;
+  transition:
+    color 120ms,
+    border-color 120ms;
 }
 
 .lang-btn:hover {
@@ -358,4 +360,84 @@ code {
   font-size: 14px;
   padding: 24px;
   text-align: center;
+}
+
+.pack-heading,
+.pack-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pack-heading .panel-title {
+  margin-bottom: 10px;
+}
+.pack-heading > span {
+  font-size: 11px;
+  color: var(--accent-2);
+  margin-bottom: 10px;
+}
+.pack-directory {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 7px;
+}
+.pack-icon {
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+  float: left;
+  margin: 0 8px 8px 0;
+  border-radius: 5px;
+}
+.pack-description {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  margin-top: 0;
+}
+.pack-actions {
+  clear: both;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.pack-actions .muted {
+  font-size: 12px;
+}
+.pack-instructions,
+.pack-limitations {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.pack-error {
+  color: var(--warn);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.pack-missing {
+  font-size: 12px;
+  color: var(--warn);
+}
+.pack-missing summary {
+  cursor: pointer;
+}
+.pack-missing ul {
+  max-height: 200px;
+  overflow: auto;
+  padding-left: 18px;
+}
+.pack-missing li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.preview-toolbar {
+  flex-wrap: wrap;
+  right: 12px;
+  pointer-events: none;
+}
+.preview-toolbar > * {
+  pointer-events: auto;
 }

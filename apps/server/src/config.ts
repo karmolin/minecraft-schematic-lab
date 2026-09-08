@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
 
 export interface AppConfig {
   host: string;
@@ -8,6 +9,8 @@ export interface AppConfig {
   mcpMode: boolean;
   /** Absolute path to the built web viewer (apps/web/dist). */
   webDist: string;
+  resourcePacksDir?: string;
+  vanillaJar?: string;
 }
 
 /**
@@ -44,5 +47,16 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
   const mcpMode = argv.includes('--mcp') || process.env.MCP === '1';
   const baseUrl = `http://${host}:${port}`;
   const webDist = resolveWebDist();
-  return { host, port, baseUrl, mcpMode, webDist };
+  // Resolve from the installation, not the launcher/MCP process working directory.
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const installRoot = existsSync(join(moduleDir, 'config.ts'))
+    ? resolve(moduleDir, '../../..')
+    : resolve(moduleDir, '..');
+  const resourcePacksDir = resolve(
+    process.env.RESOURCE_PACKS_DIR || join(installRoot, 'resourcepacks'),
+  );
+  const vanillaJar = resolve(
+    process.env.MINECRAFT_112_JAR || join(resourcePacksDir, '.base', 'minecraft-1.12.2.jar'),
+  );
+  return { host, port, baseUrl, mcpMode, webDist, resourcePacksDir, vanillaJar };
 }

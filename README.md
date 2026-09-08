@@ -214,6 +214,16 @@ Windows：
 
 ## 开发
 
+### Minecraft Java 1.12.2 材质包
+
+将 ZIP 或已解压的材质包放入项目根目录 `resourcepacks/`，在网页左侧“材质包”中切换。每 5 秒自动发现文件变化，也可点击刷新；支持记住选择和同名 ZIP 更新。
+
+需要 `pack_format: 3`。将本地 **1.12.2 客户端 JAR** 复制到 `resourcepacks/.base/minecraft-1.12.2.jar`，用于补齐资源包没有提供的原版贴图和模型。也可用 `MINECRAFT_112_JAR` 指定 JAR，或用 `RESOURCE_PACKS_DIR` 指定材质包目录。用户材质文件不会提交或打包发布。
+
+首版支持常见原版方块的标准 JSON 模型、分面贴图与朝向；动画使用首帧，随机模型使用第一项，草叶使用固定染色。未支持或无法识别的方块会在界面列出；切包不会更改建筑数据或导出文件。OptiFine、光影、龙核和模板识别修复另行处理。网页截图包含所选材质，MCP `render_image` 仍为纯色等轴图。
+
+浏览器回归：`pnpm test:resource-packs`（需要 Playwright Chromium）。本机放好上述原版 JAR 和 `resourcepacks/§a§l材质包.zip` 后，运行 `pnpm test:resource-packs --actual` 可使用实际材质包验证。测试使用独立临时目录与随机空闲端口，不修改正在使用的建筑。
+
 ```bash
 pnpm setup        # 安装依赖并构建
 pnpm dev          # 启动 web（5173）+ server（8765），支持热重载

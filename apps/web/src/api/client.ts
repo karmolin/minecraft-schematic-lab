@@ -1,4 +1,9 @@
-import type { CurrentBuildResponse, PreviewData } from '@minecraft-schematic-lab/shared';
+import type {
+  CurrentBuildResponse,
+  PreviewData,
+  ResourcePackList,
+  PackAppearance,
+} from '@minecraft-schematic-lab/shared';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -18,6 +23,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 const EXPORT_URL = '/api/session/export.schem';
 
 export const api = {
+  resourcePacks: () => request<ResourcePackList>('/api/resource-packs'),
+  refreshResourcePacks: () =>
+    request<ResourcePackList>('/api/resource-packs/refresh', { method: 'POST' }),
+  resolvePack: (packId: string, revision: string, states: string[], signal?: AbortSignal) =>
+    request<PackAppearance>('/api/resource-packs/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packId, revision, states }),
+      signal,
+    }),
   current: () => request<CurrentBuildResponse>('/api/session/current'),
   previewData: () => request<PreviewData>('/api/session/preview-data'),
   exportUrl: (format: 'mcedit' | 'sponge-v2' | 'sponge-v3' = 'sponge-v2') =>

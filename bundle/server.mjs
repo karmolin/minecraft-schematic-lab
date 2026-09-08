@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 // apps/server/src/index.ts
-import { existsSync as existsSync4 } from "node:fs";
+import { existsSync as existsSync5 } from "node:fs";
 import { createServer } from "node:net";
 
 // apps/server/src/config.ts
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 function resolveWebDist() {
   const candidates = [];
   if (process.env.WEB_DIST_PATH) {
@@ -27,13 +28,21 @@ function loadConfig(argv = process.argv.slice(2)) {
   const mcpMode = argv.includes("--mcp") || process.env.MCP === "1";
   const baseUrl = `http://${host}:${port}`;
   const webDist = resolveWebDist();
-  return { host, port, baseUrl, mcpMode, webDist };
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const installRoot = existsSync(join(moduleDir, "config.ts")) ? resolve(moduleDir, "../../..") : resolve(moduleDir, "..");
+  const resourcePacksDir = resolve(
+    process.env.RESOURCE_PACKS_DIR || join(installRoot, "resourcepacks")
+  );
+  const vanillaJar = resolve(
+    process.env.MINECRAFT_112_JAR || join(resourcePacksDir, ".base", "minecraft-1.12.2.jar")
+  );
+  return { host, port, baseUrl, mcpMode, webDist, resourcePacksDir, vanillaJar };
 }
 
 // apps/server/src/git/GitProjectService.ts
 import { existsSync as existsSync2, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname as dirname2, isAbsolute, join as join2, relative, resolve as resolve2, sep } from "node:path";
 import { execa } from "execa";
 
 // apps/server/src/httpError.ts
@@ -61,14 +70,14 @@ var GitProjectService = class {
     if (!input || !input.trim()) {
       throw new HttpError(400, "A project path is required.");
     }
-    const abs = isAbsolute(input) ? input : resolve(homedir(), input);
+    const abs = isAbsolute(input) ? input : resolve2(homedir(), input);
     let existing = abs;
-    while (!existsSync2(existing) && dirname(existing) !== existing) {
-      existing = dirname(existing);
+    while (!existsSync2(existing) && dirname2(existing) !== existing) {
+      existing = dirname2(existing);
     }
     const realExisting = realpathSync(existing);
     const remainder = relative(existing, abs);
-    const realAbs = remainder ? join(realExisting, remainder) : realExisting;
+    const realAbs = remainder ? join2(realExisting, remainder) : realExisting;
     const realHome = realpathSync(homedir());
     if (realAbs === realHome) {
       throw new HttpError(400, "Refusing to use the home directory itself; pick a subfolder.");
@@ -117,7 +126,7 @@ var GitProjectService = class {
   writeFiles(dir, files) {
     this.ensureDir(dir);
     for (const [name, content] of Object.entries(files)) {
-      writeFileSync(join(dir, name), content, "utf8");
+      writeFileSync(join2(dir, name), content, "utf8");
     }
   }
   async commitAll(cwd, message) {
@@ -199,7 +208,7 @@ var GitProjectService = class {
 };
 
 // apps/server/src/http/createHttpServer.ts
-import { existsSync as existsSync3 } from "node:fs";
+import { existsSync as existsSync4 } from "node:fs";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 
@@ -1145,6 +1154,593 @@ function registerSessionRoutes(app, sm) {
   });
 }
 
+// apps/server/src/resourcepacks/ResourcePackManager.ts
+import { existsSync as existsSync3, mkdirSync as mkdirSync2, readdirSync as readdirSync2, statSync as statSync2 } from "node:fs";
+import { join as join4 } from "node:path";
+
+// apps/server/src/resourcepacks/PackSource.ts
+import { createHash } from "node:crypto";
+import { lstatSync, readFileSync, readdirSync, realpathSync as realpathSync2, statSync } from "node:fs";
+import { isAbsolute as isAbsolute2, join as join3, relative as relative2, resolve as resolve3 } from "node:path";
+import AdmZip from "adm-zip";
+var MAX_ARCHIVE = 256 * 1024 * 1024;
+var MAX_ENTRY = 32 * 1024 * 1024;
+var MAX_ENTRIES = 4e4;
+var MAX_TOTAL = 512 * 1024 * 1024;
+var digest = (value) => createHash("sha256").update(value).digest("hex").slice(0, 20);
+function resourcePath(path) {
+  if (!path || path.includes("\\") || path.includes("\0") || path.includes(":") || path.startsWith("/") || path.split("/").some((p) => p === ".." || p === "." || p === "")) {
+    throw new Error("Invalid resource path");
+  }
+  return path;
+}
+function jsonRoot(names, vanilla) {
+  if (vanilla || names.has("pack.mcmeta")) return "";
+  const roots = [...names].filter((n) => /^[^/]+\/pack\.mcmeta$/.test(n));
+  if (roots.length === 1) return roots[0].slice(0, -"pack.mcmeta".length);
+  throw new Error("\u7F3A\u5C11 pack.mcmeta\uFF0C\u8BF7\u5C06 pack.mcmeta \u548C assets \u653E\u5728\u6750\u8D28\u5305\u6839\u76EE\u5F55\u3002");
+}
+function zipSource(path, vanilla = false) {
+  if (statSync(path).size > MAX_ARCHIVE) throw new Error("ZIP \u8D85\u8FC7 256 MB\uFF0C\u9996\u7248\u6682\u4E0D\u652F\u6301\u3002");
+  const bytes = readFileSync(path);
+  const zip = new AdmZip(bytes);
+  const entries = zip.getEntries();
+  if (entries.length > MAX_ENTRIES) throw new Error("\u6750\u8D28\u5305\u6587\u4EF6\u6570\u91CF\u8FC7\u591A\u3002");
+  const all = /* @__PURE__ */ new Map();
+  let total = 0;
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    const name = resourcePath(entry.entryName);
+    if (name.includes("\uFFFD")) throw new Error("ZIP \u5185\u6587\u4EF6\u540D\u7F16\u7801\u5F02\u5E38\uFF0C\u8BF7\u4F7F\u7528 UTF-8 \u91CD\u65B0\u538B\u7F29\u3002");
+    if (all.has(name)) throw new Error(`ZIP \u5185\u5B58\u5728\u91CD\u540D\u6587\u4EF6\uFF1A${name}`);
+    if ((entry.header.flags & 1) !== 0) throw new Error("\u6682\u4E0D\u652F\u6301\u52A0\u5BC6 ZIP\u3002");
+    total += entry.header.size;
+    if (total > MAX_TOTAL) throw new Error("\u6750\u8D28\u5305\u89E3\u538B\u540E\u8FC7\u5927\u3002");
+    all.set(name, entry);
+  }
+  const root = jsonRoot(new Set(all.keys()), vanilla);
+  const names = new Set(
+    [...all.keys()].filter((n) => n.startsWith(root)).map((n) => n.slice(root.length))
+  );
+  return {
+    revision: digest(bytes),
+    names,
+    read(path2) {
+      resourcePath(path2);
+      const entry = all.get(root + path2);
+      if (!entry) return null;
+      if (entry.header.size > MAX_ENTRY) throw new Error(`\u8D44\u6E90\u6587\u4EF6\u8D85\u8FC7 32 MB\uFF1A${path2}`);
+      return entry.getData();
+    }
+  };
+}
+function folderSource(path) {
+  const root = realpathSync2(path);
+  const files = /* @__PURE__ */ new Map();
+  function walk(dir, prefix2, depth) {
+    if (depth > 24) throw new Error("\u6750\u8D28\u5305\u76EE\u5F55\u5C42\u7EA7\u8FC7\u6DF1\u3002");
+    for (const item of readdirSync(dir, { withFileTypes: true })) {
+      if (item.isSymbolicLink()) continue;
+      const name = prefix2 + item.name;
+      resourcePath(name);
+      if (item.isDirectory()) walk(join3(dir, item.name), name + "/", depth + 1);
+      else if (item.isFile()) {
+        const stat = statSync(join3(dir, item.name));
+        files.set(name, { size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs });
+        if (files.size > MAX_ENTRIES) throw new Error("\u6750\u8D28\u5305\u6587\u4EF6\u6570\u91CF\u8FC7\u591A\u3002");
+      }
+    }
+  }
+  walk(root, "", 0);
+  const prefix = jsonRoot(new Set(files.keys()), false);
+  return {
+    revision: digest(JSON.stringify([...files].sort(([a], [b]) => a.localeCompare(b)))),
+    names: new Set(
+      [...files.keys()].filter((n) => n.startsWith(prefix)).map((n) => n.slice(prefix.length))
+    ),
+    read(path2) {
+      resourcePath(path2);
+      const name = prefix + path2;
+      const expected = files.get(name);
+      if (!expected) return null;
+      const file = resolve3(root, name);
+      const actual = realpathSync2(file);
+      const rel = relative2(root, actual);
+      if (isAbsolute2(rel) || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\"))
+        throw new Error("Invalid resource path");
+      const stat = lstatSync(file);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== expected.size || stat.mtimeMs !== expected.mtimeMs || stat.ctimeMs !== expected.ctimeMs) {
+        throw new Error("\u6750\u8D28\u5305\u6B63\u5728\u4FEE\u6539\uFF0C\u8BF7\u5237\u65B0\u5217\u8868\u540E\u91CD\u8BD5\u3002");
+      }
+      if (stat.size > MAX_ENTRY) throw new Error(`\u8D44\u6E90\u6587\u4EF6\u8D85\u8FC7 32 MB\uFF1A${path2}`);
+      return readFileSync(file);
+    }
+  };
+}
+function readJson(bytes, name) {
+  if (!bytes) throw new Error(`\u7F3A\u5C11\u8D44\u6E90\uFF1A${name}`);
+  if (bytes.length > 2 * 1024 * 1024) throw new Error(`JSON \u6587\u4EF6\u8FC7\u5927\uFF1A${name}`);
+  try {
+    return JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error(`JSON \u683C\u5F0F\u9519\u8BEF\uFF1A${name}`);
+  }
+}
+
+// apps/server/src/resourcepacks/ResourcePackManager.ts
+var stripFormatting = (value) => value.replace(/§[0-9a-fk-or]/gi, "").trim();
+var ResourcePackManager = class {
+  constructor(directory, vanillaJar) {
+    this.directory = directory;
+    this.vanillaJar = vanillaJar;
+    mkdirSync2(directory, { recursive: true });
+  }
+  installed = /* @__PURE__ */ new Map();
+  base = null;
+  baseFingerprint = "";
+  baseError = "";
+  list(force = false) {
+    try {
+      const stat = statSync2(this.vanillaJar);
+      const stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+      if (force || stamp !== this.baseFingerprint) {
+        const base = zipSource(this.vanillaJar, true);
+        if (!base.names.has("assets/minecraft/blockstates/stone.json") || !base.names.has("assets/minecraft/textures/blocks/stone.png")) {
+          throw new Error("\u539F\u7248\u5E95\u5C42\u8D44\u6E90\u5FC5\u987B\u6765\u81EA Minecraft Java 1.12.2 \u5BA2\u6237\u7AEF JAR\u3002");
+        }
+        this.base = base;
+        this.baseFingerprint = stamp;
+      }
+      this.baseError = "";
+    } catch (error) {
+      this.base = null;
+      this.baseFingerprint = "";
+      this.baseError = existsSync3(this.vanillaJar) ? error instanceof Error ? error.message : String(error) : "\u5C1A\u672A\u914D\u7F6E 1.12.2 \u539F\u7248\u5E95\u5C42\u8D44\u6E90\u3002\u8BF7\u5C06\u5BA2\u6237\u7AEF JAR \u653E\u5165 resourcepacks/.base/minecraft-1.12.2.jar\u3002";
+    }
+    const found = /* @__PURE__ */ new Set();
+    for (const item of readdirSync2(this.directory, { withFileTypes: true })) {
+      if (item.name.startsWith(".") || item.isSymbolicLink()) continue;
+      if (!item.isDirectory() && !(item.isFile() && /\.zip$/i.test(item.name))) continue;
+      const id = digest(item.name);
+      found.add(id);
+      const path = join4(this.directory, item.name);
+      let fingerprint = "";
+      try {
+        const stat = statSync2(path);
+        fingerprint = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+        const previous = this.installed.get(id);
+        if (!force && item.isFile() && previous?.fingerprint === fingerprint) continue;
+        const source = item.isDirectory() ? folderSource(path) : zipSource(path);
+        const meta = readJson(
+          source.read("pack.mcmeta"),
+          "pack.mcmeta"
+        );
+        if (meta?.pack?.pack_format !== 3)
+          throw new Error("\u9996\u7248\u4EC5\u652F\u6301 1.12.2 \u6750\u8D28\u5305\uFF08pack_format \u5FC5\u987B\u4E3A 3\uFF09\u3002");
+        const description = typeof meta.pack.description === "string" ? stripFormatting(meta.pack.description) : "";
+        const info = {
+          id,
+          name: stripFormatting(item.name.replace(/\.zip$/i, "")),
+          description,
+          revision: source.revision,
+          kind: item.isDirectory() ? "folder" : "zip",
+          status: "ready"
+        };
+        this.installed.set(id, { info, source, fingerprint });
+      } catch (error) {
+        this.installed.set(id, {
+          fingerprint,
+          info: {
+            id,
+            name: stripFormatting(item.name),
+            description: "",
+            revision: digest(fingerprint),
+            kind: item.isDirectory() ? "folder" : "zip",
+            status: "error",
+            error: error instanceof Error ? error.message : String(error)
+          }
+        });
+      }
+    }
+    for (const id of this.installed.keys()) if (!found.has(id)) this.installed.delete(id);
+    const packs = [
+      {
+        id: "builtin",
+        name: "Pixel Perfection CE\uFF08\u9879\u76EE\u5185\u7F6E\uFF09",
+        description: "",
+        revision: "builtin",
+        kind: "builtin",
+        status: "ready"
+      },
+      {
+        id: "vanilla",
+        name: "Minecraft 1.12.2 \u539F\u7248",
+        description: "",
+        revision: this.base?.revision ?? "missing",
+        kind: "vanilla",
+        status: this.base ? "ready" : "error",
+        ...this.baseError ? { error: this.baseError } : {}
+      }
+    ];
+    for (const pack of [...this.installed.values()].sort(
+      (a, b) => a.info.name.localeCompare(b.info.name)
+    )) {
+      const revision = digest(`${pack.info.revision}:${this.base?.revision ?? "missing"}`);
+      packs.push({
+        ...pack.info,
+        revision,
+        ...pack.source?.names.has("pack.png") ? { iconUrl: this.assetUrl(pack.info.id, revision, "pack.png") } : {}
+      });
+    }
+    return {
+      directory: this.directory,
+      minecraftVersion: "1.12.2",
+      baseReady: !!this.base,
+      ...this.baseError ? { baseError: this.baseError } : {},
+      packs
+    };
+  }
+  assetUrl(id, revision, path) {
+    return `/api/resource-packs/${id}/${revision}/assets/${path.split("/").map(encodeURIComponent).join("/")}`;
+  }
+  resources(id, revision) {
+    if (id === "builtin") throw new HttpError(400, "\u5185\u7F6E\u6750\u8D28\u7531\u7F51\u9875\u76F4\u63A5\u52A0\u8F7D\u3002");
+    const pack = id === "vanilla" ? void 0 : this.installed.get(id);
+    if (id !== "vanilla" && (!pack || !pack.source || pack.info.status !== "ready")) {
+      throw new HttpError(404, "\u6750\u8D28\u5305\u4E0D\u53EF\u7528\uFF0C\u8BF7\u5237\u65B0\u5217\u8868\u3002");
+    }
+    const actualRevision = id === "vanilla" ? this.base?.revision : digest(`${pack.info.revision}:${this.base?.revision ?? "missing"}`);
+    if (revision !== actualRevision) throw new HttpError(409, "\u6750\u8D28\u5305\u5DF2\u66F4\u65B0\uFF0C\u8BF7\u5237\u65B0\u5217\u8868\u540E\u91CD\u8BD5\u3002");
+    if (!this.base) throw new HttpError(409, this.baseError || "\u7F3A\u5C11 1.12.2 \u539F\u7248\u5E95\u5C42\u8D44\u6E90\u3002");
+    const base = this.base;
+    return {
+      packId: id,
+      revision,
+      read(path) {
+        resourcePath(path);
+        const own = pack?.source?.read(path);
+        if (own) return { bytes: own, source: "pack" };
+        const original = base.read(path);
+        return original ? { bytes: original, source: "vanilla" } : null;
+      },
+      url: (path) => this.assetUrl(id, revision, path)
+    };
+  }
+  icon(id, revision) {
+    const pack = this.installed.get(id);
+    if (!pack?.source || digest(`${pack.info.revision}:${this.base?.revision ?? "missing"}`) !== revision)
+      return null;
+    return pack.source.read("pack.png");
+  }
+};
+
+// apps/server/src/resourcepacks/legacyState.ts
+var ALIASES = {
+  grass_block: "grass",
+  short_grass: "tall_grass",
+  grass: "grass",
+  bricks: "brick_block",
+  stone_bricks: "stonebrick",
+  mossy_stone_bricks: "mossy_stonebrick",
+  cracked_stone_bricks: "cracked_stonebrick",
+  chiseled_stone_bricks: "chiseled_stonebrick",
+  nether_bricks: "nether_brick",
+  red_nether_bricks: "red_nether_brick",
+  end_stone_bricks: "end_bricks",
+  terracotta: "hardened_clay",
+  snow: "snow_layer",
+  snow_block: "snow",
+  smooth_stone: "stone_double_slab",
+  smooth_sandstone: "smooth_sandstone",
+  smooth_red_sandstone: "smooth_red_sandstone",
+  cut_sandstone: "sandstone",
+  cut_red_sandstone: "red_sandstone",
+  chiseled_quartz_block: "chiseled_quartz_block",
+  quartz_pillar: "quartz_column",
+  polished_granite: "smooth_granite",
+  polished_diorite: "smooth_diorite",
+  polished_andesite: "smooth_andesite",
+  cobweb: "web",
+  lily_pad: "waterlily",
+  spawner: "mob_spawner",
+  oak_fence: "fence",
+  oak_fence_gate: "fence_gate",
+  oak_door: "wooden_door",
+  oak_trapdoor: "trapdoor",
+  oak_button: "wooden_button",
+  oak_pressure_plate: "wooden_pressure_plate",
+  redstone_torch: "redstone_torch",
+  wall_torch: "torch",
+  redstone_wall_torch: "redstone_torch",
+  dandelion: "dandelion",
+  poppy: "poppy",
+  sugar_cane: "reeds"
+};
+function legacyState(state) {
+  const match = /^(?:minecraft:)?([a-z0-9_]+)(?:\[([^\]]*)\])?$/.exec(state);
+  if (!match) throw new Error("\u9996\u7248\u4EC5\u652F\u6301 Minecraft 1.12.2 \u7684\u539F\u7248\u65B9\u5757\u3002");
+  const original = match[1];
+  const properties = {
+    facing: "north",
+    half: "bottom",
+    shape: "straight",
+    axis: "y",
+    snowy: "false",
+    north: "false",
+    east: "false",
+    south: "false",
+    west: "false",
+    up: "true",
+    open: "false",
+    powered: "false",
+    in_wall: "false",
+    hinge: "left",
+    layers: "1"
+  };
+  for (const part of (match[2] ?? "").split(",")) {
+    const [key, value] = part.split("=");
+    if (key && value && key !== "__proto__") properties[key] = value;
+  }
+  let name = ALIASES[original] ?? original;
+  name = name.replace(/^light_gray_/, "silver_");
+  if (!name.endsWith("_glazed_terracotta"))
+    name = name.replace(/_terracotta$/, "_stained_hardened_clay");
+  if (original.endsWith("_slab")) {
+    const material = original.slice(0, -5);
+    const slabs = {
+      stone: "stone",
+      smooth_stone: "stone",
+      stone_brick: "stone_brick",
+      brick: "brick",
+      quartz: "quartz",
+      nether_brick: "nether_brick",
+      sandstone: "sandstone",
+      red_sandstone: "red_sandstone",
+      cobblestone: "cobblestone",
+      purpur: "purpur",
+      oak: "oak",
+      spruce: "spruce",
+      birch: "birch",
+      jungle: "jungle",
+      acacia: "acacia",
+      dark_oak: "dark_oak"
+    };
+    if (slabs[material])
+      name = `${slabs[material]}_${properties.type === "double" ? "double_" : ""}slab`;
+    if (properties.type === "top") properties.half = "top";
+  }
+  if (original === "furnace" && properties.lit === "true") name = "lit_furnace";
+  if (original === "redstone_lamp" && properties.lit === "true") name = "lit_redstone_lamp";
+  return { name, properties };
+}
+
+// apps/server/src/resourcepacks/resolveAppearance.ts
+var DIRECTIONS = ["east", "west", "up", "down", "south", "north"];
+function assetName(reference, kind) {
+  const pieces = reference.split(":");
+  const namespace = pieces.length === 2 ? pieces[0] : "minecraft";
+  let name = pieces.length === 2 ? pieces[1] : reference;
+  if (!/^[a-z0-9_.-]+$/.test(namespace) || !/^[a-z0-9_./!-]+$/.test(name) || name.includes(".."))
+    throw new Error(`\u8D44\u6E90\u8DEF\u5F84\u4E0D\u652F\u6301\uFF1A${reference}`);
+  if (kind === "models" && !name.includes("/")) name = `block/${name}`;
+  return `assets/${namespace}/${kind}/${name}.${kind === "models" ? "json" : "png"}`;
+}
+function firstVariant(variant) {
+  const first = Array.isArray(variant) ? variant[0] : variant;
+  if (!first || typeof first.model !== "string") throw new Error("\u65B9\u5757\u6A21\u578B\u5F15\u7528\u65E0\u6548\u3002");
+  return first;
+}
+function matches(condition, properties) {
+  if (!condition) return true;
+  return Object.entries(condition).every(([key, expected]) => {
+    if (key === "OR" && Array.isArray(expected))
+      return expected.some((c) => matches(c, properties));
+    if (key === "AND" && Array.isArray(expected))
+      return expected.every((c) => matches(c, properties));
+    return typeof expected === "string" && expected.split("|").includes(properties[key] ?? "false");
+  });
+}
+function variantsFor(blockstate, properties) {
+  if (Array.isArray(blockstate.multipart)) {
+    return blockstate.multipart.filter((part) => matches(part.when, properties)).map((part) => firstVariant(part.apply));
+  }
+  const variants = Object.entries(blockstate.variants ?? {});
+  const match = variants.find(
+    ([key]) => key === "normal" || key === "" || key.split(",").every((part) => {
+      const [k, v] = part.split("=");
+      return !!k && properties[k] === v;
+    })
+  );
+  if (!match) throw new Error("\u8BE5\u65B9\u5757\u72B6\u6001\u6682\u672A\u5339\u914D\u5230 1.12.2 \u6A21\u578B\u3002");
+  return [firstVariant(match[1])];
+}
+function vec(value) {
+  return Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= 1024);
+}
+function validateElement(element) {
+  if (!element || !vec(element.from) || !vec(element.to) || !element.faces || typeof element.faces !== "object")
+    throw new Error("\u65B9\u5757\u6A21\u578B\u5750\u6807\u65E0\u6548\u3002");
+  if (element.rotation && (!vec(element.rotation.origin) || !["x", "y", "z"].includes(element.rotation.axis) || !Number.isFinite(element.rotation.angle) || Math.abs(element.rotation.angle) > 45))
+    throw new Error("\u65B9\u5757\u6A21\u578B\u65CB\u8F6C\u65E0\u6548\u3002");
+}
+function animationFrame(resources, path, bytes) {
+  if (bytes.length < 24 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a")
+    throw new Error(`\u8D34\u56FE\u4E0D\u662F\u6709\u6548 PNG\uFF1A${path}`);
+  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+  if (!width || !height || width > 8192 || height > 8192 || width * height > 16777216)
+    throw new Error(`\u8D34\u56FE\u5C3A\u5BF8\u8FC7\u5927\uFF1A${path}`);
+  const meta = resources.read(`${path}.mcmeta`);
+  if (!meta) return void 0;
+  const data = readJson(meta.bytes, `${path}.mcmeta`);
+  if (!data.animation) return void 0;
+  const animation = data.animation;
+  const frameWidth = animation.width ?? width;
+  const frameHeight = animation.height ?? frameWidth;
+  const first = animation.frames?.[0] ?? 0;
+  const index = typeof first === "number" ? first : first.index;
+  if (![frameWidth, frameHeight, index].every(Number.isInteger) || frameWidth <= 0 || frameHeight <= 0 || index < 0 || width % frameWidth !== 0 || height % frameHeight !== 0 || index >= width / frameWidth * (height / frameHeight)) {
+    throw new Error(`\u52A8\u753B\u5E27\u914D\u7F6E\u65E0\u6548\uFF1A${path}`);
+  }
+  return {
+    x: index % (width / frameWidth) * frameWidth,
+    y: Math.floor(index / (width / frameWidth)) * frameHeight,
+    width: frameWidth,
+    height: frameHeight
+  };
+}
+function resolveAppearance(resources, states) {
+  const result = {
+    packId: resources.packId,
+    revision: resources.revision,
+    blocks: {},
+    textures: {}
+  };
+  const models = /* @__PURE__ */ new Map();
+  function modelFor(path, chain = []) {
+    if (chain.includes(path) || chain.length > 24) throw new Error("\u65B9\u5757\u6A21\u578B\u5B58\u5728\u5FAA\u73AF\u7EE7\u627F\u3002");
+    const cached = models.get(path);
+    if (cached) return cached;
+    const resource = resources.read(path);
+    const own = readJson(resource?.bytes ?? null, path);
+    if (!own || typeof own !== "object") throw new Error(`\u65E0\u6548\u6A21\u578B\uFF1A${path}`);
+    const parent = own.parent ? modelFor(assetName(own.parent, "models"), [...chain, path]) : null;
+    const merged = {
+      model: {
+        ...parent?.model,
+        ...own,
+        textures: { ...parent?.model.textures, ...own.textures },
+        elements: own.elements ?? parent?.model.elements
+      },
+      custom: resource?.source === "pack" || !!parent?.custom
+    };
+    models.set(path, merged);
+    return merged;
+  }
+  for (const state of [...new Set(states)]) {
+    try {
+      const { name, properties } = legacyState(state);
+      const blockstatePath = `assets/minecraft/blockstates/${name}.json`;
+      const source = resources.read(blockstatePath);
+      if (!source) throw new Error("\u672A\u627E\u5230\u8BE5\u65B9\u5757\u7684 1.12.2 \u8D44\u6E90\uFF1B\u65B9\u5757 ID \u672A\u4F5C\u4FEE\u6539\u3002");
+      const definition = readJson(source.bytes, blockstatePath);
+      let custom = source.source === "pack";
+      const parts = [];
+      const localTextures = {};
+      for (const variant of variantsFor(definition, properties)) {
+        const resolved = modelFor(assetName(variant.model, "models"));
+        custom ||= resolved.custom;
+        const model = resolved.model;
+        if (!Array.isArray(model.elements) || model.elements.length === 0)
+          throw new Error("\u8BE5\u65B9\u5757\u4F7F\u7528\u7279\u6B8A\u6E32\u67D3\uFF0C\u9996\u7248\u6682\u4E0D\u652F\u6301\u3002");
+        if (model.elements.length > 512) throw new Error("\u65B9\u5757\u6A21\u578B\u90E8\u4EF6\u8FC7\u591A\u3002");
+        const elements = [];
+        for (const element of model.elements) {
+          validateElement(element);
+          const faces = {};
+          for (const direction of DIRECTIONS) {
+            const face = element.faces[direction];
+            if (!face) continue;
+            let texture = face.texture;
+            const seen = /* @__PURE__ */ new Set();
+            while (typeof texture === "string" && texture.startsWith("#")) {
+              if (seen.has(texture)) throw new Error("\u8D34\u56FE\u5F15\u7528\u5B58\u5728\u5FAA\u73AF\u3002");
+              seen.add(texture);
+              texture = model.textures?.[texture.slice(1)] ?? "";
+            }
+            if (!texture) throw new Error("\u6A21\u578B\u7F3A\u5C11\u8D34\u56FE\u5F15\u7528\u3002");
+            const path = assetName(texture, "textures");
+            let ref = localTextures[path] ?? result.textures[path];
+            if (!ref) {
+              const resource = resources.read(path);
+              if (!resource) throw new Error(`\u7F3A\u5C11\u8D34\u56FE\uFF1A${path}`);
+              ref = {
+                url: resources.url(path),
+                source: resource.source,
+                frame: animationFrame(resources, path, resource.bytes)
+              };
+            }
+            localTextures[path] = ref;
+            custom ||= ref.source === "pack";
+            if (face.uv && (!Array.isArray(face.uv) || face.uv.length !== 4 || !face.uv.every(Number.isFinite)))
+              throw new Error("\u6A21\u578B\u8D34\u56FE\u5750\u6807\u65E0\u6548\u3002");
+            if (face.rotation !== void 0 && ![0, 90, 180, 270].includes(face.rotation))
+              throw new Error("\u6A21\u578B\u8D34\u56FE\u65CB\u8F6C\u65E0\u6548\u3002");
+            faces[direction] = {
+              texture: path,
+              uv: face.uv,
+              rotation: face.rotation,
+              ...face.tintindex !== void 0 && face.tintindex >= 0 ? {
+                tint: /spruce/.test(name) ? "#619961" : /birch/.test(name) ? "#80a755" : "#91bd59"
+              } : {}
+            };
+          }
+          elements.push({ from: element.from, to: element.to, rotation: element.rotation, faces });
+        }
+        if (![variant.x ?? 0, variant.y ?? 0].every((n) => Number.isFinite(n) && n % 90 === 0))
+          throw new Error("\u65B9\u5757\u72B6\u6001\u65CB\u8F6C\u65E0\u6548\u3002");
+        parts.push({
+          elements,
+          x: variant.x ?? 0,
+          y: variant.y ?? 0,
+          uvlock: variant.uvlock ?? false
+        });
+      }
+      if (parts.length === 0) throw new Error("\u8BE5\u65B9\u5757\u72B6\u6001\u6CA1\u6709\u53EF\u663E\u793A\u6A21\u578B\u3002");
+      result.blocks[state] = { parts, source: custom ? "pack" : "vanilla" };
+      Object.assign(result.textures, localTextures);
+    } catch (error) {
+      result.blocks[state] = {
+        parts: [],
+        source: "missing",
+        warning: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  return result;
+}
+
+// apps/server/src/http/routes/resourcePackRoutes.ts
+import { join as join5 } from "node:path";
+function registerResourcePackRoutes(app, config) {
+  const directory = config.resourcePacksDir ?? join5(process.cwd(), "resourcepacks");
+  const manager = new ResourcePackManager(
+    directory,
+    config.vanillaJar ?? join5(directory, ".base", "minecraft-1.12.2.jar")
+  );
+  manager.list();
+  app.get(
+    "/api/resource-packs",
+    async (_request, reply) => reply.header("Cache-Control", "no-store").send(manager.list())
+  );
+  app.post(
+    "/api/resource-packs/refresh",
+    async (_request, reply) => reply.header("Cache-Control", "no-store").send(manager.list(true))
+  );
+  app.post("/api/resource-packs/resolve", async (request, reply) => {
+    const body = request.body;
+    if (!body || typeof body.packId !== "string" || typeof body.revision !== "string" || !Array.isArray(body.states) || body.states.length > 2048 || !body.states.every(
+      (state) => typeof state === "string" && state.length <= 512 && state !== "__proto__"
+    )) {
+      throw new HttpError(400, "\u65E0\u6548\u7684\u6750\u8D28\u8BF7\u6C42\uFF08\u6700\u591A 2048 \u79CD\u65B9\u5757\u72B6\u6001\uFF09\u3002");
+    }
+    return reply.header("Cache-Control", "no-store").send(
+      resolveAppearance(manager.resources(body.packId, body.revision), body.states)
+    );
+  });
+  app.get(
+    "/api/resource-packs/:id/:revision/assets/*",
+    async (request, reply) => {
+      const { id, revision } = request.params;
+      const path = request.params["*"];
+      if (path !== "pack.png" && (!path.startsWith("assets/") || !path.endsWith(".png")))
+        throw new HttpError(404, "\u8D44\u6E90\u4E0D\u5B58\u5728\u3002");
+      const bytes = path === "pack.png" ? manager.icon(id, revision) : manager.resources(id, revision).read(path)?.bytes;
+      if (!bytes) throw new HttpError(404, "\u8D34\u56FE\u4E0D\u5B58\u5728\u3002");
+      return reply.type("image/png").header("X-Content-Type-Options", "nosniff").header("Cache-Control", "public, max-age=31536000, immutable").send(bytes);
+    }
+  );
+}
+
 // apps/server/src/http/createHttpServer.ts
 var BODY_LIMIT = 8 * 1024 * 1024;
 async function createHttpServer(sm, config) {
@@ -1160,7 +1756,8 @@ async function createHttpServer(sm, config) {
   registerSessionRoutes(app, sm);
   registerExportRoutes(app, sm);
   registerProjectRoutes(app, sm);
-  if (existsSync3(config.webDist)) {
+  registerResourcePackRoutes(app, config);
+  if (existsSync4(config.webDist)) {
     await app.register(fastifyStatic, { root: config.webDist, prefix: "/" });
     app.setNotFoundHandler((request, reply) => {
       if (request.method === "GET" && !request.url.startsWith("/api")) {
@@ -1749,7 +2346,7 @@ async function startMcpServer(deps) {
 
 // apps/server/src/session/SessionManager.ts
 import { writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join2 } from "node:path";
+import { join as join6 } from "node:path";
 import jsonpatch from "fast-json-patch";
 
 // packages/block-compiler/src/BlockVolume.ts
@@ -3020,7 +3617,7 @@ var SessionManager = class {
       ".gitignore": "node_modules/\n"
     });
     const buffer = await this.schematicFor(session, "sponge-v2");
-    writeFileSync2(join2(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
+    writeFileSync2(join6(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
   }
   async schematicFor(session, format = "sponge-v2") {
     const cached = session.schematicCache.get(format);
@@ -3056,10 +3653,10 @@ var SessionManager = class {
 
 // apps/server/src/index.ts
 function isPortFree(host, port) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve4) => {
     const probe = createServer();
-    probe.once("error", () => resolve2(false));
-    probe.once("listening", () => probe.close(() => resolve2(true)));
+    probe.once("error", () => resolve4(false));
+    probe.once("listening", () => probe.close(() => resolve4(true)));
     probe.listen(port, host);
   });
 }
@@ -3080,7 +3677,7 @@ async function main() {
   await app.listen({ host: config.host, port: config.port });
   if (config.mcpMode) {
     await startMcpServer({ sessionManager, config });
-    const note = existsSync4(config.webDist) ? "" : ' (run "pnpm build" once to enable the browser viewer)';
+    const note = existsSync5(config.webDist) ? "" : ' (run "pnpm build" once to enable the browser viewer)';
     process.stderr.write(
       `minecraft-schematic-lab: MCP stdio ready; viewer + API on ${config.baseUrl}${note}
 `

@@ -16,6 +16,9 @@ pnpm-debug.log*
 .idea/
 .vscode/
 /tmp-projects/
+/builds/
+/resourcepacks/*
+!/resourcepacks/README.md
 
 # Ship the prebuilt bundle used by `npx github:` (git-spec installs use the committed
 # tree, NOT the package.json `files` allowlist). These negations must come after the

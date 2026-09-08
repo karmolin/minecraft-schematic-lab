@@ -4,6 +4,8 @@ import { GizmoHelper, GizmoViewport, Grid, OrbitControls } from '@react-three/dr
 import type { PreviewData } from '@minecraft-schematic-lab/shared';
 import { InstancedBlocks } from './InstancedBlocks';
 import { presetPosition, type CameraPresetName } from './cameraPresets';
+import { PackBlocks } from './PackBlocks';
+import { useResourcePackStore } from '../state/useResourcePackStore';
 
 interface ControlsLike {
   target: { set(x: number, y: number, z: number): void };
@@ -25,6 +27,7 @@ function CameraRig({ preset, size }: { preset: CameraPresetName; size: PreviewDa
 }
 
 export function VoxelScene({ data, preset }: { data: PreviewData; preset: CameraPresetName }) {
+  const pack = useResourcePackStore((s) => s.loaded);
   const size = data.size;
   const maxDim = Math.max(size.x, size.y, size.z, 1);
 
@@ -54,7 +57,7 @@ export function VoxelScene({ data, preset }: { data: PreviewData; preset: Camera
         <boxGeometry args={[size.x, size.y, size.z]} />
         <meshBasicMaterial wireframe color="#33405a" transparent opacity={0.25} />
       </mesh>
-      <InstancedBlocks data={data} />
+      {pack ? <PackBlocks data={data} pack={pack} /> : <InstancedBlocks data={data} />}
       <OrbitControls makeDefault target={[0, 0, 0]} />
       <CameraRig preset={preset} size={size} />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>

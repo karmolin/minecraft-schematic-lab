@@ -33,6 +33,7 @@ const webDistOut = resolve(outDir, 'web/dist');
 // Real npm deps: keep external so they install from package.json "dependencies".
 // MUST stay in sync with the runtime "dependencies" of the ROOT package.json.
 const external = [
+  'adm-zip',
   'fastify',
   '@fastify/static',
   '@modelcontextprotocol/sdk',

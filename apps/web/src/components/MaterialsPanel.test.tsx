@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, screen } from '@testing-library/react';
+import { renderWithI18n as render } from '../test/render';
 import { MaterialsPanel } from './MaterialsPanel';
 import { useBuildStore } from '../state/useBuildStore';
 
