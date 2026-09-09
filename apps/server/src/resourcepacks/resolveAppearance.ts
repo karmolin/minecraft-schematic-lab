@@ -32,7 +32,7 @@ interface Variant {
   uvlock?: boolean;
   weight?: number;
 }
-type Condition = Record<string, string | Condition[]>;
+type Condition = { [key: string]: string | boolean | Condition[] };
 interface BlockState {
   variants?: Record<string, Variant | Variant[]>;
   multipart?: { when?: Condition; apply: Variant | Variant[] }[];
@@ -63,7 +63,12 @@ function matches(condition: Condition | undefined, properties: Record<string, st
       return expected.some((c) => matches(c, properties));
     if (key === 'AND' && Array.isArray(expected))
       return expected.every((c) => matches(c, properties));
-    return typeof expected === 'string' && expected.split('|').includes(properties[key] ?? 'false');
+    return (
+      (typeof expected === 'string' || typeof expected === 'boolean') &&
+      String(expected)
+        .split('|')
+        .includes(properties[key] ?? 'false')
+    );
   });
 }
 
@@ -166,6 +171,28 @@ export function resolveAppearance(resources: PackResources, states: string[]): P
   };
   const models = new Map<string, { model: Model; custom: boolean }>();
   function modelFor(path: string, chain: string[] = []): { model: Model; custom: boolean } {
+    // 1.12.2 fluids use a game renderer instead of blockstate/model JSON files.
+    // A static surface uses the selected pack's texture and its first animation frame.
+    const water = /\/__preview_water_(\d+)\.json$/.exec(path);
+    if (water) {
+      const level = Number(water[1]);
+      const height = level >= 8 ? 16 : (16 * (8 - level)) / 9;
+      return {
+        custom: false,
+        model: {
+          textures: { all: 'blocks/water_still' },
+          elements: [
+            {
+              from: [0, 0, 0],
+              to: [16, height, 16],
+              faces: Object.fromEntries(
+                DIRECTIONS.map((face) => [face, { texture: '#all', tintindex: 0 }]),
+              ),
+            },
+          ],
+        },
+      };
+    }
     if (chain.includes(path) || chain.length > 24) throw new Error('方块模型存在循环继承。');
     const cached = models.get(path);
     if (cached) return cached;
@@ -191,9 +218,13 @@ export function resolveAppearance(resources: PackResources, states: string[]): P
       const { name, properties } = legacyState(state);
       const blockstatePath = `assets/minecraft/blockstates/${name}.json`;
       const source = resources.read(blockstatePath);
-      if (!source) throw new Error('未找到该方块的 1.12.2 资源；方块 ID 未作修改。');
-      const definition = readJson<BlockState>(source.bytes, blockstatePath);
-      let custom = source.source === 'pack';
+      const water = name === 'water' || name === 'flowing_water';
+      if (!source && !water) throw new Error('未找到该方块的 1.12.2 资源；方块 ID 未作修改。');
+      const level = Math.max(0, Math.min(15, Number.parseInt(properties.level ?? '0', 10) || 0));
+      const definition: BlockState = source
+        ? readJson<BlockState>(source.bytes, blockstatePath)
+        : { variants: { normal: { model: `block/__preview_water_${level}` } } };
+      let custom = source?.source === 'pack';
       const parts: PackModelPart[] = [];
       const localTextures: Record<string, PackTexture> = {};
       for (const variant of variantsFor(definition, properties)) {
@@ -244,11 +275,13 @@ export function resolveAppearance(resources: PackResources, states: string[]): P
               rotation: face.rotation,
               ...(face.tintindex !== undefined && face.tintindex >= 0
                 ? {
-                    tint: /spruce/.test(name)
-                      ? '#619961'
-                      : /birch/.test(name)
-                        ? '#80a755'
-                        : '#91bd59',
+                    tint: water
+                      ? '#3f76e4'
+                      : /spruce/.test(name)
+                        ? '#619961'
+                        : /birch/.test(name)
+                          ? '#80a755'
+                          : '#91bd59',
                   }
                 : {}),
             };

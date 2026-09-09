@@ -103,8 +103,13 @@ export function createPackGeometry(
   materials: THREE.Material[];
 } {
   if (!block || block.parts.length === 0) {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    // BoxGeometry assigns indices 0..5 to its faces. A one-material array must
+    // explicitly share material 0 across all faces, or only the east face draws.
+    geometry.clearGroups();
+    geometry.addGroup(0, geometry.index!.count, 0);
     return {
-      geometry: new THREE.BoxGeometry(1, 1, 1),
+      geometry,
       materials: [new THREE.MeshStandardMaterial({ color: '#dc43b6', roughness: 1 })],
     };
   }
@@ -115,7 +120,7 @@ export function createPackGeometry(
   const groups: { start: number; count: number; materialIndex: number }[] = [];
   const materials: THREE.Material[] = [];
   const materialKeys = new Map<string, number>();
-  const transparent = /glass|ice|slime/.test(state);
+  const transparent = /glass|ice|slime|water/.test(state);
   function materialFor(face: PackFace): number {
     const key = `${face.texture}:${face.tint ?? 'white'}`;
     const previous = materialKeys.get(key);
@@ -128,6 +133,7 @@ export function createPackGeometry(
         roughness: 1,
         metalness: 0,
         transparent,
+        opacity: /water/.test(state) ? 0.75 : 1,
         alphaTest: transparent ? 0.01 : 0.5,
         depthWrite: !transparent,
         side: THREE.DoubleSide,

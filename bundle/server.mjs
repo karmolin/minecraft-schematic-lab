@@ -1156,7 +1156,7 @@ function registerSessionRoutes(app, sm) {
 
 // apps/server/src/resourcepacks/ResourcePackManager.ts
 import { existsSync as existsSync3, mkdirSync as mkdirSync2, readdirSync as readdirSync2, statSync as statSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { join as join5 } from "node:path";
 
 // apps/server/src/resourcepacks/PackSource.ts
 import { createHash } from "node:crypto";
@@ -1267,6 +1267,51 @@ function readJson(bytes, name) {
   }
 }
 
+// apps/server/src/resourcepacks/PackPreference.ts
+import { readFileSync as readFileSync2, renameSync, writeFileSync as writeFileSync2, unlinkSync } from "node:fs";
+import { join as join4 } from "node:path";
+import { randomUUID } from "node:crypto";
+var PackPreference = class {
+  file;
+  constructor(directory) {
+    this.file = join4(directory, ".preview-settings.json");
+  }
+  read() {
+    let text;
+    try {
+      text = readFileSync2(this.file, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw new HttpError(500, "\u65E0\u6CD5\u8BFB\u53D6\u5DF2\u4FDD\u5B58\u7684\u6750\u8D28\u5305\u9009\u62E9\u3002");
+    }
+    try {
+      const data = JSON.parse(text);
+      if (typeof data.selectedPackId !== "string" || !data.selectedPackId || data.selectedPackId.length > 128)
+        throw new Error("Invalid selection");
+      return data.selectedPackId;
+    } catch {
+      throw new HttpError(500, "\u6750\u8D28\u5305\u9009\u62E9\u914D\u7F6E\u635F\u574F\uFF1B\u672A\u8986\u76D6\u539F\u6587\u4EF6\u3002");
+    }
+  }
+  save(selectedPackId) {
+    if (this.read() === selectedPackId) return;
+    const temporary = `${this.file}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync2(temporary, JSON.stringify({ version: 1, selectedPackId }, null, 2), {
+        flag: "wx"
+      });
+      renameSync(temporary, this.file);
+    } catch {
+      throw new HttpError(500, "\u65E0\u6CD5\u4FDD\u5B58\u6750\u8D28\u5305\u9009\u62E9\uFF1B\u8BF7\u68C0\u67E5\u6750\u8D28\u5305\u76EE\u5F55\u662F\u5426\u53EF\u5199\u3002");
+    } finally {
+      try {
+        unlinkSync(temporary);
+      } catch {
+      }
+    }
+  }
+};
+
 // apps/server/src/resourcepacks/ResourcePackManager.ts
 var stripFormatting = (value) => value.replace(/§[0-9a-fk-or]/gi, "").trim();
 var ResourcePackManager = class {
@@ -1274,11 +1319,13 @@ var ResourcePackManager = class {
     this.directory = directory;
     this.vanillaJar = vanillaJar;
     mkdirSync2(directory, { recursive: true });
+    this.preference = new PackPreference(directory);
   }
   installed = /* @__PURE__ */ new Map();
   base = null;
   baseFingerprint = "";
   baseError = "";
+  preference;
   list(force = false) {
     try {
       const stat = statSync2(this.vanillaJar);
@@ -1303,7 +1350,7 @@ var ResourcePackManager = class {
       if (!item.isDirectory() && !(item.isFile() && /\.zip$/i.test(item.name))) continue;
       const id = digest(item.name);
       found.add(id);
-      const path = join4(this.directory, item.name);
+      const path = join5(this.directory, item.name);
       let fingerprint = "";
       try {
         const stat = statSync2(path);
@@ -1375,10 +1422,19 @@ var ResourcePackManager = class {
     return {
       directory: this.directory,
       minecraftVersion: "1.12.2",
+      selectedPackId: this.preference.read(),
       baseReady: !!this.base,
       ...this.baseError ? { baseError: this.baseError } : {},
       packs
     };
+  }
+  select(packId) {
+    const list = this.list();
+    const pack = list.packs.find((item) => item.id === packId);
+    if (!pack || pack.status !== "ready" || packId !== "builtin" && !list.baseReady)
+      throw new HttpError(400, "\u6750\u8D28\u5305\u4E0D\u53EF\u7528\uFF0C\u672A\u66F4\u6539\u5DF2\u4FDD\u5B58\u7684\u9009\u62E9\u3002");
+    this.preference.save(packId);
+    return { selectedPackId: packId };
   }
   assetUrl(id, revision, path) {
     return `/api/resource-packs/${id}/${revision}/assets/${path.split("/").map(encodeURIComponent).join("/")}`;
@@ -1537,7 +1593,7 @@ function matches(condition, properties) {
       return expected.some((c) => matches(c, properties));
     if (key === "AND" && Array.isArray(expected))
       return expected.every((c) => matches(c, properties));
-    return typeof expected === "string" && expected.split("|").includes(properties[key] ?? "false");
+    return (typeof expected === "string" || typeof expected === "boolean") && String(expected).split("|").includes(properties[key] ?? "false");
   });
 }
 function variantsFor(blockstate, properties) {
@@ -1597,6 +1653,26 @@ function resolveAppearance(resources, states) {
   };
   const models = /* @__PURE__ */ new Map();
   function modelFor(path, chain = []) {
+    const water = /\/__preview_water_(\d+)\.json$/.exec(path);
+    if (water) {
+      const level = Number(water[1]);
+      const height = level >= 8 ? 16 : 16 * (8 - level) / 9;
+      return {
+        custom: false,
+        model: {
+          textures: { all: "blocks/water_still" },
+          elements: [
+            {
+              from: [0, 0, 0],
+              to: [16, height, 16],
+              faces: Object.fromEntries(
+                DIRECTIONS.map((face) => [face, { texture: "#all", tintindex: 0 }])
+              )
+            }
+          ]
+        }
+      };
+    }
     if (chain.includes(path) || chain.length > 24) throw new Error("\u65B9\u5757\u6A21\u578B\u5B58\u5728\u5FAA\u73AF\u7EE7\u627F\u3002");
     const cached = models.get(path);
     if (cached) return cached;
@@ -1621,9 +1697,11 @@ function resolveAppearance(resources, states) {
       const { name, properties } = legacyState(state);
       const blockstatePath = `assets/minecraft/blockstates/${name}.json`;
       const source = resources.read(blockstatePath);
-      if (!source) throw new Error("\u672A\u627E\u5230\u8BE5\u65B9\u5757\u7684 1.12.2 \u8D44\u6E90\uFF1B\u65B9\u5757 ID \u672A\u4F5C\u4FEE\u6539\u3002");
-      const definition = readJson(source.bytes, blockstatePath);
-      let custom = source.source === "pack";
+      const water = name === "water" || name === "flowing_water";
+      if (!source && !water) throw new Error("\u672A\u627E\u5230\u8BE5\u65B9\u5757\u7684 1.12.2 \u8D44\u6E90\uFF1B\u65B9\u5757 ID \u672A\u4F5C\u4FEE\u6539\u3002");
+      const level = Math.max(0, Math.min(15, Number.parseInt(properties.level ?? "0", 10) || 0));
+      const definition = source ? readJson(source.bytes, blockstatePath) : { variants: { normal: { model: `block/__preview_water_${level}` } } };
+      let custom = source?.source === "pack";
       const parts = [];
       const localTextures = {};
       for (const variant of variantsFor(definition, properties)) {
@@ -1670,7 +1748,7 @@ function resolveAppearance(resources, states) {
               uv: face.uv,
               rotation: face.rotation,
               ...face.tintindex !== void 0 && face.tintindex >= 0 ? {
-                tint: /spruce/.test(name) ? "#619961" : /birch/.test(name) ? "#80a755" : "#91bd59"
+                tint: water ? "#3f76e4" : /spruce/.test(name) ? "#619961" : /birch/.test(name) ? "#80a755" : "#91bd59"
               } : {}
             };
           }
@@ -1700,12 +1778,12 @@ function resolveAppearance(resources, states) {
 }
 
 // apps/server/src/http/routes/resourcePackRoutes.ts
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 function registerResourcePackRoutes(app, config) {
-  const directory = config.resourcePacksDir ?? join5(process.cwd(), "resourcepacks");
+  const directory = config.resourcePacksDir ?? join6(process.cwd(), "resourcepacks");
   const manager = new ResourcePackManager(
     directory,
-    config.vanillaJar ?? join5(directory, ".base", "minecraft-1.12.2.jar")
+    config.vanillaJar ?? join6(directory, ".base", "minecraft-1.12.2.jar")
   );
   manager.list();
   app.get(
@@ -1716,6 +1794,12 @@ function registerResourcePackRoutes(app, config) {
     "/api/resource-packs/refresh",
     async (_request, reply) => reply.header("Cache-Control", "no-store").send(manager.list(true))
   );
+  app.post("/api/resource-packs/selection", async (request, reply) => {
+    const body = request.body;
+    if (!body || typeof body.packId !== "string" || !body.packId || body.packId.length > 128)
+      throw new HttpError(400, "\u65E0\u6548\u7684\u6750\u8D28\u5305\u9009\u62E9\u3002");
+    return reply.header("Cache-Control", "no-store").send(manager.select(body.packId));
+  });
   app.post("/api/resource-packs/resolve", async (request, reply) => {
     const body = request.body;
     if (!body || typeof body.packId !== "string" || typeof body.revision !== "string" || !Array.isArray(body.states) || body.states.length > 2048 || !body.states.every(
@@ -1872,7 +1956,7 @@ var buildOperationSchema = z.discriminatedUnion("type", [
 var buildSpecSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  minecraftVersion: z.string().min(1),
+  minecraftVersion: z.string().min(1).default("1.12.2"),
   size: z.object({
     x: z.number().int().positive(),
     y: z.number().int().positive(),
@@ -1909,19 +1993,26 @@ function validateBuildSpec(input) {
 var fantasyHouseDemo = {
   id: "fantasy-house",
   name: "Fantasy Cottage",
-  minecraftVersion: "1.21",
+  minecraftVersion: "1.12.2",
   size: { x: 21, y: 16, z: 19 },
   palette: {
     foundation: "minecraft:cobblestone",
     wall: "minecraft:spruce_planks",
     roof: "minecraft:dark_oak_stairs",
     glass: "minecraft:glass_pane",
-    frame: "minecraft:stripped_spruce_log"
+    frame: "minecraft:spruce_log"
   },
   operations: [
     { type: "box", from: [1, 0, 0], to: [19, 1, 15], block: "foundation" },
     { type: "hollow_box", from: [1, 2, 0], to: [19, 9, 15], block: "wall" },
-    { type: "gable_roof", from: [1, 9, 0], to: [19, 15, 17], axis: "x", block: "roof", overhang: 1 },
+    {
+      type: "gable_roof",
+      from: [1, 9, 0],
+      to: [19, 15, 17],
+      axis: "x",
+      block: "roof",
+      overhang: 1
+    },
     {
       type: "window_pattern",
       side: "south",
@@ -1938,7 +2029,7 @@ var fantasyHouseDemo = {
 var stoneWatchtower = {
   id: "stone-watchtower",
   name: "Stone Watchtower",
-  minecraftVersion: "1.21",
+  minecraftVersion: "1.12.2",
   size: { x: 15, y: 26, z: 15 },
   palette: {
     base: "minecraft:cobblestone",
@@ -1960,7 +2051,7 @@ var stoneWatchtower = {
 var logCabin = {
   id: "log-cabin",
   name: "Log Cabin",
-  minecraftVersion: "1.21",
+  minecraftVersion: "1.12.2",
   size: { x: 17, y: 13, z: 15 },
   palette: {
     floor: "minecraft:spruce_planks",
@@ -1972,7 +2063,14 @@ var logCabin = {
   operations: [
     { type: "box", from: [0, 0, 1], to: [12, 0, 13], block: "floor" },
     { type: "hollow_box", from: [0, 1, 1], to: [12, 7, 13], block: "wall" },
-    { type: "gable_roof", from: [0, 7, 1], to: [12, 12, 13], axis: "z", block: "roof", overhang: 1 },
+    {
+      type: "gable_roof",
+      from: [0, 7, 1],
+      to: [12, 12, 13],
+      axis: "z",
+      block: "roof",
+      overhang: 1
+    },
     { type: "wall_rect", from: [13, 1, 1], to: [16, 1, 13], block: "rail", hollow: false },
     {
       type: "window_pattern",
@@ -1989,7 +2087,7 @@ var logCabin = {
 var featureShowcase = {
   id: "feature-showcase",
   name: "Feature Showcase",
-  minecraftVersion: "1.21",
+  minecraftVersion: "1.12.2",
   size: { x: 25, y: 25, z: 25 },
   palette: {
     stone: "minecraft:stone",
@@ -2345,8 +2443,8 @@ async function startMcpServer(deps) {
 }
 
 // apps/server/src/session/SessionManager.ts
-import { writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join6 } from "node:path";
+import { writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join7 } from "node:path";
 import jsonpatch from "fast-json-patch";
 
 // packages/block-compiler/src/BlockVolume.ts
@@ -2994,6 +3092,8 @@ var SIMPLE_BLOCKS = {
   cave_air: { id: 0, data: 0 },
   void_air: { id: 0, data: 0 },
   stone: { id: 1, data: 0 },
+  andesite: { id: 1, data: 5 },
+  polished_andesite: { id: 1, data: 6 },
   grass_block: { id: 2, data: 0 },
   dirt: { id: 3, data: 0 },
   coarse_dirt: { id: 3, data: 1 },
@@ -3007,8 +3107,7 @@ var SIMPLE_BLOCKS = {
   bricks: { id: 45, data: 0 },
   bookshelf: { id: 47, data: 0 },
   obsidian: { id: 49, data: 0 },
-  torch: { id: 50, data: 0 },
-  chest: { id: 54, data: 0 },
+  torch: { id: 50, data: 5 },
   diamond_block: { id: 57, data: 0 },
   crafting_table: { id: 58, data: 0 },
   furnace: { id: 61, data: 0 },
@@ -3022,6 +3121,12 @@ var SIMPLE_BLOCKS = {
   iron_bars: { id: 101, data: 0 },
   glass_pane: { id: 102, data: 0 },
   nether_brick: { id: 112, data: 0 },
+  nether_bricks: { id: 112, data: 0 },
+  mossy_stone_bricks: { id: 98, data: 1 },
+  cracked_stone_bricks: { id: 98, data: 2 },
+  chiseled_stone_bricks: { id: 98, data: 3 },
+  fern: { id: 31, data: 2 },
+  poppy: { id: 38, data: 0 },
   quartz_block: { id: 155, data: 0 },
   packed_ice: { id: 174, data: 0 }
 };
@@ -3078,12 +3183,22 @@ function stairData(properties) {
 function legacyBlock(state) {
   const { name, properties } = parseState(state);
   if (SIMPLE_BLOCKS[name]) return SIMPLE_BLOCKS[name];
+  if (name === "quartz_pillar")
+    return { id: 155, data: properties.axis === "x" ? 3 : properties.axis === "z" ? 4 : 2 };
+  const glazed = name.match(
+    /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_glazed_terracotta$/
+  );
+  if (glazed)
+    return {
+      id: 235 + DYE_DATA[glazed[1]],
+      data: { south: 0, west: 1, north: 2, east: 3 }[properties.facing ?? "north"] ?? 2
+    };
   const plank = name.match(/^(oak|spruce|birch|jungle|acacia|dark_oak)_planks$/);
   if (plank) return { id: 5, data: PLANKS_DATA[plank[1]] ?? 0 };
-  const log = name.match(/^(stripped_)?(oak|spruce|birch|jungle|acacia|dark_oak)_(?:log|wood)$/);
+  const log = name.match(/^(oak|spruce|birch|jungle|acacia|dark_oak)_(log|wood)$/);
   if (log) {
-    const wood = log[2];
-    const axis = properties.axis === "x" ? 4 : properties.axis === "z" ? 8 : 0;
+    const wood = log[1];
+    const axis = log[2] === "wood" ? 12 : properties.axis === "x" ? 4 : properties.axis === "z" ? 8 : 0;
     const woodData = WOOD_DATA[wood] ?? 0;
     if (wood === "acacia" || wood === "dark_oak") return { id: 162, data: woodData + axis };
     return { id: 17, data: woodData + axis };
@@ -3101,6 +3216,24 @@ function legacyBlock(state) {
     /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_wool$/
   );
   if (wool) return { id: 35, data: DYE_DATA[wool[1]] ?? 0 };
+  const colored = name.match(
+    /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_(stained_glass|stained_glass_pane|carpet)$/
+  );
+  if (colored)
+    return {
+      id: { stained_glass: 95, stained_glass_pane: 160, carpet: 171 }[colored[2]],
+      data: DYE_DATA[colored[1]]
+    };
+  if (name === "ladder" || name === "chest")
+    return {
+      id: name === "ladder" ? 65 : 54,
+      data: { north: 2, south: 3, west: 4, east: 5 }[properties.facing ?? "north"] ?? 2
+    };
+  if (name === "water" || name === "flowing_water")
+    return {
+      id: name === "water" ? 9 : 8,
+      data: Number.parseInt(properties.level ?? "0", 10) & 15
+    };
   const concrete = name.match(
     /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_(concrete|concrete_powder)$/
   );
@@ -3109,11 +3242,33 @@ function legacyBlock(state) {
       id: concrete[2] === "concrete" ? 251 : 252,
       data: DYE_DATA[concrete[1]] ?? 0
     };
-  if (name === "stone_slab" || name === "smooth_stone_slab") return { id: 44, data: 0 };
-  if (name === "oak_slab") return { id: 126, data: 0 };
-  if (name === "spruce_slab") return { id: 126, data: 1 };
-  if (name === "dark_oak_slab") return { id: 126, data: 5 };
+  const stoneSlabs = {
+    stone: 0,
+    smooth_stone: 0,
+    sandstone: 1,
+    cobblestone: 3,
+    brick: 4,
+    stone_brick: 5,
+    nether_brick: 6,
+    quartz: 7
+  };
+  const slab = name.match(/^(.*)_slab$/);
+  if (slab) {
+    const material = slab[1];
+    const wood = PLANKS_DATA[material];
+    const variant = wood ?? stoneSlabs[material];
+    if (variant !== void 0) {
+      const doubled = properties.type === "double";
+      return {
+        id: wood !== void 0 ? doubled ? 125 : 126 : doubled ? 43 : 44,
+        data: variant + (!doubled && (properties.type === "top" || properties.half === "top") ? 8 : 0)
+      };
+    }
+  }
   return null;
+}
+function unsupportedLegacyBlocks(volume) {
+  return volume.getPalette().filter((state) => legacyBlock(state) === null);
 }
 function tileEntity(be) {
   const value = {
@@ -3415,6 +3570,13 @@ var SessionManager = class {
     const session = this.getCurrent();
     try {
       const result = compileBuildSpec(input);
+      if (/^1\.12(?:\.|$)/.test(result.spec.minecraftVersion)) {
+        const unsupported = unsupportedLegacyBlocks(result.volume);
+        if (unsupported.length)
+          throw new BuildSpecError([
+            `\u65E0\u6CD5\u65E0\u635F\u5BFC\u51FA\u4E3A Minecraft 1.12.2\uFF0C\u8BF7\u66F4\u6362\u6216\u8865\u5145\u517C\u5BB9\u6620\u5C04\uFF1A${unsupported.join(", ")}`
+          ]);
+      }
       session.spec = result.spec;
       session.volume = result.volume;
       session.warnings = result.warnings;
@@ -3453,6 +3615,13 @@ var SessionManager = class {
   validate(input) {
     try {
       const result = compileBuildSpec(input);
+      if (/^1\.12(?:\.|$)/.test(result.spec.minecraftVersion)) {
+        const unsupported = unsupportedLegacyBlocks(result.volume);
+        if (unsupported.length)
+          throw new BuildSpecError([
+            `\u65E0\u6CD5\u65E0\u635F\u5BFC\u51FA\u4E3A Minecraft 1.12.2\uFF0C\u8BF7\u66F4\u6362\u6216\u8865\u5145\u517C\u5BB9\u6620\u5C04\uFF1A${unsupported.join(", ")}`
+          ]);
+      }
       return { valid: true, errors: [], warnings: result.warnings };
     } catch (error) {
       if (error instanceof BuildSpecError) {
@@ -3617,7 +3786,7 @@ var SessionManager = class {
       ".gitignore": "node_modules/\n"
     });
     const buffer = await this.schematicFor(session, "sponge-v2");
-    writeFileSync2(join6(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
+    writeFileSync3(join7(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
   }
   async schematicFor(session, format = "sponge-v2") {
     const cached = session.schematicCache.get(format);

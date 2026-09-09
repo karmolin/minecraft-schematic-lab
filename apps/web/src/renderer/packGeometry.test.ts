@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import type { PackBlockAppearance, PackElement } from '@minecraft-schematic-lab/shared';
 import { createPackGeometry, defaultFaceUV } from './packGeometry';
 import type { LoadedPack } from './packTextures';
@@ -21,6 +22,34 @@ const slab: PackElement = {
 };
 
 describe('resource pack geometry', () => {
+  it('renders and raycasts every outside face of a missing-block placeholder', () => {
+    const result = createPackGeometry(
+      { source: 'missing', parts: [] },
+      pack,
+      'minecraft:deepslate',
+    );
+    const mesh = new THREE.Mesh(result.geometry, result.materials);
+    mesh.updateMatrixWorld();
+    for (const origin of [
+      [2, 0, 0],
+      [-2, 0, 0],
+      [0, 2, 0],
+      [0, -2, 0],
+      [0, 0, 2],
+      [0, 0, -2],
+    ]) {
+      const position = new THREE.Vector3(...origin);
+      const ray = new THREE.Raycaster(position, position.clone().negate().normalize());
+      expect(ray.intersectObject(mesh).length).toBeGreaterThan(0);
+    }
+    const drawnIndices = result.geometry.groups.reduce(
+      (count, group) => count + (result.materials[group.materialIndex ?? 0] ? group.count : 0),
+      0,
+    );
+    expect(drawnIndices).toBe(36);
+    result.geometry.dispose();
+    result.materials.forEach((material) => material.dispose());
+  });
   it('keeps a top slab in the top half and preserves distinct top, bottom and side materials', () => {
     const block: PackBlockAppearance = {
       source: 'pack',

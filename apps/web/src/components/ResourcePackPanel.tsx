@@ -6,6 +6,21 @@ import { useResourcePackStore } from '../state/useResourcePackStore';
 import { disposePack, loadPackTextures } from '../renderer/packTextures';
 import { useI18n } from '../i18n/I18nContext';
 
+// Serialize preference writes: a cancelled texture load must not let an older
+// in-flight save overwrite the user's newest successful selection on disk.
+let preferenceWrite: Promise<void> = Promise.resolve();
+function persistSelection(id: string, current: () => boolean): Promise<void> {
+  const write = preferenceWrite
+    .catch(() => {})
+    .then(async () => {
+      if (!current() || useResourcePackStore.getState().persistedId === id) return;
+      await api.selectResourcePack(id);
+      useResourcePackStore.setState({ persistedId: id });
+    });
+  preferenceWrite = write;
+  return write;
+}
+
 export function ResourcePackPanel() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -16,7 +31,8 @@ export function ResourcePackPanel() {
     retry: false,
   });
   const build = useBuildStore((s) => s.build);
-  const { selectedId, activeId, loaded, loading, error, select, publish } = useResourcePackStore();
+  const { selectedId, activeId, hydrated, loaded, loading, error, initialize, select, publish } =
+    useResourcePackStore();
   const [refreshing, setRefreshing] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const pack = query.data?.packs.find((p) => p.id === selectedId);
@@ -33,24 +49,39 @@ export function ResourcePackPanel() {
   const baseError = query.data?.baseError;
 
   useEffect(() => {
-    if (!listReady) return;
+    if (query.data) initialize(query.data.selectedPackId ?? null);
+  }, [query.data, initialize]);
+
+  useEffect(() => {
+    if (!listReady || !hydrated) return;
     const controller = new AbortController();
     const store = useResourcePackStore;
-    if (selectedId === 'builtin') {
-      publish('builtin', null);
-      return;
-    }
-    if (!revision || status !== 'ready' || !baseReady) {
+    if (selectedId !== 'builtin' && (!revision || status !== 'ready' || !baseReady)) {
       store.setState({ loading: false, error: packError || baseError || t.packs.unavailable });
       return;
     }
     store.setState({ loading: true, error: '' });
-    void api
-      .resolvePack(selectedId, revision, stateKey ? stateKey.split('\n') : [], controller.signal)
-      .then((appearance) => loadPackTextures(appearance, controller.signal))
-      .then((ready) => {
-        if (controller.signal.aborted) disposePack(ready);
-        else publish(selectedId, ready);
+    const prepared =
+      selectedId === 'builtin'
+        ? Promise.resolve(null)
+        : api
+            .resolvePack(
+              selectedId,
+              revision!,
+              stateKey ? stateKey.split('\n') : [],
+              controller.signal,
+            )
+            .then((appearance) => loadPackTextures(appearance, controller.signal));
+    void prepared
+      .then(async (ready) => {
+        try {
+          await persistSelection(selectedId, () => !controller.signal.aborted);
+          if (controller.signal.aborted) disposePack(ready);
+          else publish(selectedId, ready);
+        } catch (reason) {
+          disposePack(ready);
+          throw reason;
+        }
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted)
@@ -67,6 +98,7 @@ export function ResourcePackPanel() {
     packError,
     stateKey,
     listReady,
+    hydrated,
     baseReady,
     baseError,
     attempt,
@@ -108,7 +140,7 @@ export function ResourcePackPanel() {
           aria-label={t.packs.select}
           value={selectedId}
           onChange={(event) => select(event.target.value)}
-          disabled={!query.data}
+          disabled={!query.data || !hydrated}
         >
           {!query.data?.packs.some((p) => p.id === selectedId) && (
             <option value={selectedId}>
@@ -147,7 +179,13 @@ export function ResourcePackPanel() {
           {refreshing ? t.packs.refreshing : t.packs.refresh}
         </button>
         <span className="muted" role="status">
-          {loading ? t.packs.loading : error ? t.packs.keptPrevious : t.packs.ready}
+          {!hydrated || loading
+            ? t.packs.loading
+            : error
+              ? activeId
+                ? t.packs.keptPrevious
+                : t.packs.unavailable
+              : t.packs.ready}
         </span>
       </div>
       <p className="muted pack-instructions">{t.packs.instructions}</p>

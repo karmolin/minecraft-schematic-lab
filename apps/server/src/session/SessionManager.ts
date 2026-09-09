@@ -24,7 +24,7 @@ import type {
 import type { AppConfig } from '../config';
 import { HttpError } from '../httpError';
 import { renderIsometric } from '../render/renderIsometric';
-import { writeMcEditSchematic } from '../schematic/writeMcEditSchematic';
+import { unsupportedLegacyBlocks, writeMcEditSchematic } from '../schematic/writeMcEditSchematic';
 import { writeSpongeSchematic } from '../schematic/writeSpongeSchematic';
 import type { SchematicFormat } from '../schematic/schematicTypes';
 import type { Session } from './types';
@@ -130,6 +130,13 @@ export class SessionManager {
     const session = this.getCurrent();
     try {
       const result = compileBuildSpec(input);
+      if (/^1\.12(?:\.|$)/.test(result.spec.minecraftVersion)) {
+        const unsupported = unsupportedLegacyBlocks(result.volume);
+        if (unsupported.length)
+          throw new BuildSpecError([
+            `无法无损导出为 Minecraft 1.12.2，请更换或补充兼容映射：${unsupported.join(', ')}`,
+          ]);
+      }
       session.spec = result.spec;
       session.volume = result.volume;
       session.warnings = result.warnings;
@@ -169,6 +176,13 @@ export class SessionManager {
   validate(input: unknown): ValidationResult {
     try {
       const result = compileBuildSpec(input);
+      if (/^1\.12(?:\.|$)/.test(result.spec.minecraftVersion)) {
+        const unsupported = unsupportedLegacyBlocks(result.volume);
+        if (unsupported.length)
+          throw new BuildSpecError([
+            `无法无损导出为 Minecraft 1.12.2，请更换或补充兼容映射：${unsupported.join(', ')}`,
+          ]);
+      }
       return { valid: true, errors: [], warnings: result.warnings };
     } catch (error) {
       if (error instanceof BuildSpecError) {

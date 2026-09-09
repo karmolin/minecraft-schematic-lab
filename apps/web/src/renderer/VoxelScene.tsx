@@ -28,6 +28,7 @@ function CameraRig({ preset, size }: { preset: CameraPresetName; size: PreviewDa
 
 export function VoxelScene({ data, preset }: { data: PreviewData; preset: CameraPresetName }) {
   const pack = useResourcePackStore((s) => s.loaded);
+  const activeId = useResourcePackStore((s) => s.activeId);
   const size = data.size;
   const maxDim = Math.max(size.x, size.y, size.z, 1);
 
@@ -57,7 +58,11 @@ export function VoxelScene({ data, preset }: { data: PreviewData; preset: Camera
         <boxGeometry args={[size.x, size.y, size.z]} />
         <meshBasicMaterial wireframe color="#33405a" transparent opacity={0.25} />
       </mesh>
-      {pack ? <PackBlocks data={data} pack={pack} /> : <InstancedBlocks data={data} />}
+      {pack ? (
+        <PackBlocks data={data} pack={pack} />
+      ) : activeId === 'builtin' ? (
+        <InstancedBlocks data={data} />
+      ) : null}
       <OrbitControls makeDefault target={[0, 0, 0]} />
       <CameraRig preset={preset} size={size} />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>

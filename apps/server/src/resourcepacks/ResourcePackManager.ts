@@ -10,6 +10,7 @@ import {
   type PackSource,
 } from './PackSource';
 import { HttpError } from '../httpError';
+import { PackPreference } from './PackPreference';
 
 interface InstalledPack {
   info: ResourcePackInfo;
@@ -31,12 +32,14 @@ export class ResourcePackManager {
   private base: PackSource | null = null;
   private baseFingerprint = '';
   private baseError = '';
+  private readonly preference: PackPreference;
 
   constructor(
     readonly directory: string,
     private readonly vanillaJar: string,
   ) {
     mkdirSync(directory, { recursive: true });
+    this.preference = new PackPreference(directory);
   }
 
   list(force = false): ResourcePackList {
@@ -147,10 +150,20 @@ export class ResourcePackManager {
     return {
       directory: this.directory,
       minecraftVersion: '1.12.2',
+      selectedPackId: this.preference.read(),
       baseReady: !!this.base,
       ...(this.baseError ? { baseError: this.baseError } : {}),
       packs,
     };
+  }
+
+  select(packId: string): { selectedPackId: string } {
+    const list = this.list();
+    const pack = list.packs.find((item) => item.id === packId);
+    if (!pack || pack.status !== 'ready' || (packId !== 'builtin' && !list.baseReady))
+      throw new HttpError(400, '材质包不可用，未更改已保存的选择。');
+    this.preference.save(packId);
+    return { selectedPackId: packId };
   }
 
   private assetUrl(id: string, revision: string, path: string): string {

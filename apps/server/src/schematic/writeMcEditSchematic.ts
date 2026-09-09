@@ -53,6 +53,8 @@ const SIMPLE_BLOCKS: Record<string, LegacyBlock> = {
   cave_air: { id: 0, data: 0 },
   void_air: { id: 0, data: 0 },
   stone: { id: 1, data: 0 },
+  andesite: { id: 1, data: 5 },
+  polished_andesite: { id: 1, data: 6 },
   grass_block: { id: 2, data: 0 },
   dirt: { id: 3, data: 0 },
   coarse_dirt: { id: 3, data: 1 },
@@ -66,8 +68,7 @@ const SIMPLE_BLOCKS: Record<string, LegacyBlock> = {
   bricks: { id: 45, data: 0 },
   bookshelf: { id: 47, data: 0 },
   obsidian: { id: 49, data: 0 },
-  torch: { id: 50, data: 0 },
-  chest: { id: 54, data: 0 },
+  torch: { id: 50, data: 5 },
   diamond_block: { id: 57, data: 0 },
   crafting_table: { id: 58, data: 0 },
   furnace: { id: 61, data: 0 },
@@ -81,6 +82,12 @@ const SIMPLE_BLOCKS: Record<string, LegacyBlock> = {
   iron_bars: { id: 101, data: 0 },
   glass_pane: { id: 102, data: 0 },
   nether_brick: { id: 112, data: 0 },
+  nether_bricks: { id: 112, data: 0 },
+  mossy_stone_bricks: { id: 98, data: 1 },
+  cracked_stone_bricks: { id: 98, data: 2 },
+  chiseled_stone_bricks: { id: 98, data: 3 },
+  fern: { id: 31, data: 2 },
+  poppy: { id: 38, data: 0 },
   quartz_block: { id: 155, data: 0 },
   packed_ice: { id: 174, data: 0 },
 };
@@ -145,13 +152,25 @@ function legacyBlock(state: string): LegacyBlock | null {
   const { name, properties } = parseState(state);
   if (SIMPLE_BLOCKS[name]) return SIMPLE_BLOCKS[name];
 
+  if (name === 'quartz_pillar')
+    return { id: 155, data: properties.axis === 'x' ? 3 : properties.axis === 'z' ? 4 : 2 };
+  const glazed = name.match(
+    /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_glazed_terracotta$/,
+  );
+  if (glazed)
+    return {
+      id: 235 + DYE_DATA[glazed[1]!]!,
+      data: { south: 0, west: 1, north: 2, east: 3 }[properties.facing ?? 'north'] ?? 2,
+    };
+
   const plank = name.match(/^(oak|spruce|birch|jungle|acacia|dark_oak)_planks$/);
   if (plank) return { id: 5, data: PLANKS_DATA[plank[1] as string] ?? 0 };
 
-  const log = name.match(/^(stripped_)?(oak|spruce|birch|jungle|acacia|dark_oak)_(?:log|wood)$/);
+  const log = name.match(/^(oak|spruce|birch|jungle|acacia|dark_oak)_(log|wood)$/);
   if (log) {
-    const wood = log[2] as string;
-    const axis = properties.axis === 'x' ? 4 : properties.axis === 'z' ? 8 : 0;
+    const wood = log[1] as string;
+    const axis =
+      log[2] === 'wood' ? 12 : properties.axis === 'x' ? 4 : properties.axis === 'z' ? 8 : 0;
     const woodData = WOOD_DATA[wood] ?? 0;
     if (wood === 'acacia' || wood === 'dark_oak') return { id: 162, data: woodData + axis };
     return { id: 17, data: woodData + axis };
@@ -174,6 +193,26 @@ function legacyBlock(state: string): LegacyBlock | null {
   );
   if (wool) return { id: 35, data: DYE_DATA[wool[1] as string] ?? 0 };
 
+  const colored = name.match(
+    /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_(stained_glass|stained_glass_pane|carpet)$/,
+  );
+  if (colored)
+    return {
+      id: { stained_glass: 95, stained_glass_pane: 160, carpet: 171 }[colored[2]!]!,
+      data: DYE_DATA[colored[1]!]!,
+    };
+
+  if (name === 'ladder' || name === 'chest')
+    return {
+      id: name === 'ladder' ? 65 : 54,
+      data: { north: 2, south: 3, west: 4, east: 5 }[properties.facing ?? 'north'] ?? 2,
+    };
+  if (name === 'water' || name === 'flowing_water')
+    return {
+      id: name === 'water' ? 9 : 8,
+      data: Number.parseInt(properties.level ?? '0', 10) & 15,
+    };
+
   const concrete = name.match(
     /^(white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_(concrete|concrete_powder)$/,
   );
@@ -183,12 +222,37 @@ function legacyBlock(state: string): LegacyBlock | null {
       data: DYE_DATA[concrete[1] as string] ?? 0,
     };
 
-  if (name === 'stone_slab' || name === 'smooth_stone_slab') return { id: 44, data: 0 };
-  if (name === 'oak_slab') return { id: 126, data: 0 };
-  if (name === 'spruce_slab') return { id: 126, data: 1 };
-  if (name === 'dark_oak_slab') return { id: 126, data: 5 };
+  const stoneSlabs: Record<string, number> = {
+    stone: 0,
+    smooth_stone: 0,
+    sandstone: 1,
+    cobblestone: 3,
+    brick: 4,
+    stone_brick: 5,
+    nether_brick: 6,
+    quartz: 7,
+  };
+  const slab = name.match(/^(.*)_slab$/);
+  if (slab) {
+    const material = slab[1]!;
+    const wood = PLANKS_DATA[material];
+    const variant = wood ?? stoneSlabs[material];
+    if (variant !== undefined) {
+      const doubled = properties.type === 'double';
+      return {
+        id: wood !== undefined ? (doubled ? 125 : 126) : doubled ? 43 : 44,
+        data:
+          variant + (!doubled && (properties.type === 'top' || properties.half === 'top') ? 8 : 0),
+      };
+    }
+  }
 
   return null;
+}
+
+/** Refuse unsupported palette entries before changing a 1.12.2 session. */
+export function unsupportedLegacyBlocks(volume: BlockVolume): string[] {
+  return volume.getPalette().filter((state) => legacyBlock(state) === null);
 }
 
 function tileEntity(be: BlockEntity): NbtCompoundValue {

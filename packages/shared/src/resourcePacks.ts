@@ -15,6 +15,8 @@ export interface ResourcePackList {
   minecraftVersion: '1.12.2';
   baseReady: boolean;
   baseError?: string;
+  /** null means no installation-level choice yet; the browser may migrate its old preference. */
+  selectedPackId: string | null;
   packs: ResourcePackInfo[];
 }
 

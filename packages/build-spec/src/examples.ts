@@ -7,19 +7,26 @@ import type { BuildSpec } from './types';
 export const fantasyHouseDemo: BuildSpec = {
   id: 'fantasy-house',
   name: 'Fantasy Cottage',
-  minecraftVersion: '1.21',
+  minecraftVersion: '1.12.2',
   size: { x: 21, y: 16, z: 19 },
   palette: {
     foundation: 'minecraft:cobblestone',
     wall: 'minecraft:spruce_planks',
     roof: 'minecraft:dark_oak_stairs',
     glass: 'minecraft:glass_pane',
-    frame: 'minecraft:stripped_spruce_log',
+    frame: 'minecraft:spruce_log',
   },
   operations: [
     { type: 'box', from: [1, 0, 0], to: [19, 1, 15], block: 'foundation' },
     { type: 'hollow_box', from: [1, 2, 0], to: [19, 9, 15], block: 'wall' },
-    { type: 'gable_roof', from: [1, 9, 0], to: [19, 15, 17], axis: 'x', block: 'roof', overhang: 1 },
+    {
+      type: 'gable_roof',
+      from: [1, 9, 0],
+      to: [19, 15, 17],
+      axis: 'x',
+      block: 'roof',
+      overhang: 1,
+    },
     {
       type: 'window_pattern',
       side: 'south',
@@ -38,7 +45,7 @@ export const fantasyHouseDemo: BuildSpec = {
 export const stoneWatchtower: BuildSpec = {
   id: 'stone-watchtower',
   name: 'Stone Watchtower',
-  minecraftVersion: '1.21',
+  minecraftVersion: '1.12.2',
   size: { x: 15, y: 26, z: 15 },
   palette: {
     base: 'minecraft:cobblestone',
@@ -62,7 +69,7 @@ export const stoneWatchtower: BuildSpec = {
 export const logCabin: BuildSpec = {
   id: 'log-cabin',
   name: 'Log Cabin',
-  minecraftVersion: '1.21',
+  minecraftVersion: '1.12.2',
   size: { x: 17, y: 13, z: 15 },
   palette: {
     floor: 'minecraft:spruce_planks',
@@ -74,7 +81,14 @@ export const logCabin: BuildSpec = {
   operations: [
     { type: 'box', from: [0, 0, 1], to: [12, 0, 13], block: 'floor' },
     { type: 'hollow_box', from: [0, 1, 1], to: [12, 7, 13], block: 'wall' },
-    { type: 'gable_roof', from: [0, 7, 1], to: [12, 12, 13], axis: 'z', block: 'roof', overhang: 1 },
+    {
+      type: 'gable_roof',
+      from: [0, 7, 1],
+      to: [12, 12, 13],
+      axis: 'z',
+      block: 'roof',
+      overhang: 1,
+    },
     { type: 'wall_rect', from: [13, 1, 1], to: [16, 1, 13], block: 'rail', hollow: false },
     {
       type: 'window_pattern',
@@ -93,7 +107,7 @@ export const logCabin: BuildSpec = {
 export const featureShowcase: BuildSpec = {
   id: 'feature-showcase',
   name: 'Feature Showcase',
-  minecraftVersion: '1.21',
+  minecraftVersion: '1.12.2',
   size: { x: 25, y: 25, z: 25 },
   palette: {
     stone: 'minecraft:stone',

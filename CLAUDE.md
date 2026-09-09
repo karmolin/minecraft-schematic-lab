@@ -5,6 +5,16 @@ project. The end user is a **Minecraft player, not a programmer** — they will 
 "build me a fantasy castle" or "make the roof brick". Your job is to make that work, including doing
 the one-time technical setup yourself, in plain language, the first time.
 
+## User's building defaults
+
+Default to **Minecraft Java 1.12.2** unless the user explicitly requests another version for the task.
+Use only blocks available in 1.12.2; no deepslate, lanterns, barrels or stripped logs. The BuildSpec
+may use the project's normalized names for blocks that already existed, but legacy export must
+preserve the correct numeric ID/data without silently substituting newer materials. Deliver an
+actual MCEdit `.schematic` plus editable BuildSpec for WorldEdit 6 / legacy FAWE.
+For final visual QA, use the user's selected resource pack in the real web viewer and capture that
+view. `render_image` / `renderIsometric` are flat-color diagrams and do not use the selected pack.
+
 ## What this project is
 
 A fully-local pnpm/TypeScript monorepo (Node 22+, ESM). One Node process, on **port 8765**, serves

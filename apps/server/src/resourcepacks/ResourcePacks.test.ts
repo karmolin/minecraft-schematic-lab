@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import AdmZip from 'adm-zip';
@@ -76,6 +76,102 @@ afterEach(() => {
 });
 
 describe('Java 1.12.2 resource packs', () => {
+  it('persists the choice across new managers and retains a missing preferred pack', () => {
+    archive(join(directory, 'pack.zip'), packFiles());
+    const first = new ResourcePackManager(directory, base),
+      info = packInfo(first);
+    expect(first.list().selectedPackId).toBeNull();
+    first.select(info.id);
+    const restarted = new ResourcePackManager(directory, base);
+    expect(restarted.list().selectedPackId).toBe(info.id);
+    expect(() => restarted.select('unknown')).toThrow('未更改');
+    expect(first.list().selectedPackId).toBe(info.id);
+    unlinkSync(join(directory, 'pack.zip'));
+    expect(new ResourcePackManager(directory, base).list().selectedPackId).toBe(info.id);
+    restarted.select('builtin');
+    expect(first.list().selectedPackId).toBe('builtin');
+  });
+
+  it('reports a corrupt preference without overwriting it with the built-in pack', () => {
+    const path = join(directory, '.preview-settings.json');
+    writeFileSync(path, '{broken');
+    const manager = new ResourcePackManager(directory, base);
+    expect(() => manager.list()).toThrow('配置损坏');
+    expect(() => manager.select('builtin')).toThrow('配置损坏');
+    expect(readFileSync(path, 'utf8')).toBe('{broken');
+  });
+  it('defaults new builds to 1.12.2 and rejects newer blocks without replacing the current build', () => {
+    const sm = new SessionManager(
+      { host: '127.0.0.1', port: 0, baseUrl: '', mcpMode: true, webDist: root },
+      new GitProjectService(),
+    );
+    const spec = {
+      id: 'default-version',
+      name: 'Default version',
+      size: { x: 1, y: 1, z: 1 },
+      palette: {},
+      operations: [{ type: 'box', from: [0, 0, 0], to: [0, 0, 0], block: 'minecraft:stone' }],
+    };
+    expect(sm.build(spec).valid).toBe(true);
+    expect(sm.current().spec?.minecraftVersion).toBe('1.12.2');
+    const before = sm.current().buildId;
+    const incompatible = {
+      ...spec,
+      operations: [{ ...spec.operations[0], block: 'minecraft:deepslate_bricks' }],
+    };
+    expect(sm.validate(incompatible).valid).toBe(false);
+    expect(sm.build(incompatible).valid).toBe(false);
+    expect(sm.current().buildId).toBe(before);
+    expect(sm.build({ ...incompatible, minecraftVersion: '1.21' }).valid).toBe(true);
+  });
+  it('matches boolean and string multipart connections without dropping iron bar sides', () => {
+    archive(
+      join(directory, 'pack.zip'),
+      packFiles({
+        'assets/minecraft/blockstates/iron_bars.json': json({
+          multipart: [
+            { apply: { model: 'stone' } },
+            { when: { north: true }, apply: { model: 'stone', y: 0 } },
+            { when: { east: true }, apply: { model: 'stone', y: 90 } },
+            { when: { south: 'true' }, apply: { model: 'stone', y: 180 } },
+            { when: { west: 'true' }, apply: { model: 'stone', y: 270 } },
+            {
+              when: { AND: [{ north: false }, { east: false }, { south: false }, { west: false }] },
+              apply: { model: 'oak_planks' },
+            },
+          ],
+        }),
+      }),
+    );
+    const manager = new ResourcePackManager(directory, base),
+      info = packInfo(manager);
+    const states = [
+      'iron_bars[east=true,west=true]',
+      'iron_bars[north=true,south=true]',
+      'iron_bars',
+    ];
+    const result = resolveAppearance(manager.resources(info.id, info.revision), states);
+    expect(result.blocks[states[0]!]!.parts.map((p) => p.y)).toEqual([0, 90, 270]);
+    expect(result.blocks[states[1]!]!.parts.map((p) => p.y)).toEqual([0, 0, 180]);
+    expect(result.blocks[states[2]!]!.parts).toHaveLength(2);
+  });
+
+  it('previews legacy water with the selected texture even without a blockstate JSON', () => {
+    archive(
+      join(directory, 'pack.zip'),
+      packFiles({
+        'assets/minecraft/textures/blocks/water_still.png': png('#4488cc'),
+      }),
+    );
+    const manager = new ResourcePackManager(directory, base),
+      info = packInfo(manager);
+    const result = resolveAppearance(manager.resources(info.id, info.revision), ['water[level=0]']);
+    expect(result.blocks['water[level=0]']?.source).toBe('pack');
+    expect(result.blocks['water[level=0]']?.parts[0]?.elements[0]?.to[1]).toBeCloseTo(128 / 9);
+    expect(result.textures['assets/minecraft/textures/blocks/water_still.png']?.source).toBe(
+      'pack',
+    );
+  });
   it('loads a Chinese ZIP filename, BOM metadata, a wrapper folder and partial vanilla fallback', () => {
     const files = packFiles({ 'assets/minecraft/textures/blocks/stone.png': custom });
     files['pack.mcmeta'] = Buffer.concat([Buffer.from([239, 187, 191]), files['pack.mcmeta']!]);
@@ -247,6 +343,25 @@ describe('Java 1.12.2 resource packs', () => {
     try {
       const listing = await app.inject({ method: 'GET', url: '/api/resource-packs' });
       const pack = listing.json().packs.find((p: { kind: string }) => p.kind === 'zip');
+      const choice = await app.inject({
+        method: 'POST',
+        url: '/api/resource-packs/selection',
+        payload: { packId: pack.id },
+      });
+      expect(choice.statusCode).toBe(200);
+      expect(
+        (await app.inject({ method: 'GET', url: '/api/resource-packs' })).json().selectedPackId,
+      ).toBe(pack.id);
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/resource-packs/selection',
+            payload: { packId: '../unknown' },
+          })
+        ).statusCode,
+      ).toBe(400);
+      expect(new ResourcePackManager(directory, base).list().selectedPackId).toBe(pack.id);
       const response = await app.inject({
         method: 'POST',
         url: '/api/resource-packs/resolve',

@@ -12,20 +12,29 @@ function savedPack(): string {
 
 interface ResourcePackState {
   selectedId: string;
-  activeId: string;
+  activeId: string | null;
+  hydrated: boolean;
+  persistedId: string | null;
   loaded: LoadedPack | null;
   loading: boolean;
   error: string;
+  initialize: (preferredId: string | null) => void;
   select: (id: string) => void;
   publish: (id: string, loaded: LoadedPack | null) => void;
 }
 
-export const useResourcePackStore = create<ResourcePackState>((set) => ({
-  selectedId: savedPack(),
-  activeId: 'builtin',
+export const useResourcePackStore = create<ResourcePackState>((set, get) => ({
+  selectedId: 'builtin',
+  activeId: null,
+  hydrated: false,
+  persistedId: null,
   loaded: null,
   loading: false,
   error: '',
+  initialize: (preferredId) => {
+    if (get().hydrated) return;
+    set({ selectedId: preferredId ?? savedPack(), persistedId: preferredId, hydrated: true });
+  },
   select: (selectedId) => set({ selectedId, error: '' }),
   publish: (id, loaded) => {
     try {

@@ -26,6 +26,12 @@ export const api = {
   resourcePacks: () => request<ResourcePackList>('/api/resource-packs'),
   refreshResourcePacks: () =>
     request<ResourcePackList>('/api/resource-packs/refresh', { method: 'POST' }),
+  selectResourcePack: (packId: string) =>
+    request<{ selectedPackId: string }>('/api/resource-packs/selection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packId }),
+    }),
   resolvePack: (packId: string, revision: string, states: string[], signal?: AbortSignal) =>
     request<PackAppearance>('/api/resource-packs/resolve', {
       method: 'POST',

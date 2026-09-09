@@ -19,6 +19,12 @@ export function registerResourcePackRoutes(app: FastifyInstance, config: AppConf
   app.post('/api/resource-packs/refresh', async (_request, reply) =>
     reply.header('Cache-Control', 'no-store').send(manager.list(true)),
   );
+  app.post('/api/resource-packs/selection', async (request, reply) => {
+    const body = request.body as { packId?: unknown } | null;
+    if (!body || typeof body.packId !== 'string' || !body.packId || body.packId.length > 128)
+      throw new HttpError(400, '无效的材质包选择。');
+    return reply.header('Cache-Control', 'no-store').send(manager.select(body.packId));
+  });
   app.post('/api/resource-packs/resolve', async (request, reply) => {
     const body = request.body as { packId?: unknown; revision?: unknown; states?: unknown } | null;
     if (

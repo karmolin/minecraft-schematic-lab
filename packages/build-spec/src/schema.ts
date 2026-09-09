@@ -110,7 +110,7 @@ export const buildOperationSchema = z.discriminatedUnion('type', [
 export const buildSpecSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  minecraftVersion: z.string().min(1),
+  minecraftVersion: z.string().min(1).default('1.12.2'),
   size: z.object({
     x: z.number().int().positive(),
     y: z.number().int().positive(),
