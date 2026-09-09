@@ -16,6 +16,34 @@
     sans-serif;
 }
 
+.import-btn {
+  width: 100%;
+  background: var(--accent-2);
+  color: #0a0d12;
+}
+.import-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.import-status,
+.import-error {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.import-status {
+  color: var(--accent-2);
+}
+.import-error {
+  color: #e88b8b;
+}
+.spec-download {
+  margin-top: 8px;
+  font-size: 12px;
+  width: 100%;
+  border-color: var(--border);
+  color: var(--text);
+}
+
 * {
   box-sizing: border-box;
 }

@@ -1,6 +1,17 @@
 import type { Messages } from './en';
 
 export const zh: Messages = {
+  import: {
+    title: '导入',
+    button: '导入 .schematic',
+    busy: '正在导入…',
+    description: '将 MCEdit / WorldEdit 6 原理图放进 3D 预览，再通过对话继续修改。',
+    hint: '最大 32 MiB / 200 万格。导入为新建筑，保留之前的会话。',
+    invalidType: '请选择旧版 .schematic 文件，暂不支持导入 Sponge .schem。',
+    invalidSize: '请选择非空且不超过 32 MiB 的文件。',
+    restartRequired: '预览服务仍在运行旧版本。请重启 start.bat，刷新页面后再导入。',
+    success: (name: string) => `已导入：${name}。现在可以让我在此基础上继续修改。`,
+  },
   packs: {
     title: '材质包',
     select: '预览材质包',
@@ -42,6 +53,7 @@ export const zh: Messages = {
     total: (n: string) => `合计：${n} 个方块`,
   },
   export: {
+    saveSpec: '保存可编辑 BuildSpec JSON',
     title: '导出',
     formatLabel: '格式',
     formatMcedit: '旧版 MCEdit .schematic（WorldEdit 6 / 1.12）',

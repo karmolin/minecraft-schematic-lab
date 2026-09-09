@@ -22,6 +22,7 @@ export class BlockVolume {
   private readonly palette: string[] = [AIR];
   private readonly paletteIndex = new Map<string, number>([[AIR, 0]]);
   private _outOfBoundsWrites = 0;
+  private legacyCells?: Uint32Array;
 
   constructor(x: number, y: number, z: number) {
     this.x = x;
@@ -55,7 +56,21 @@ export class BlockVolume {
       return false;
     }
     this.cells[this.index(x, y, z)] = this.idFor(state);
+    if (this.legacyCells) this.legacyCells[this.index(x, y, z)] = 0;
     return true;
+  }
+
+  /** Original numeric ID/data belongs to this cell only, and is invalidated by edits. */
+  setLegacyBlock(x: number, y: number, z: number, state: string, id: number, data: number): void {
+    if (!this.setBlock(x, y, z, state)) return;
+    this.legacyCells ??= new Uint32Array(this.cells.length);
+    this.legacyCells[this.index(x, y, z)] = ((id << 4) | data) + 1;
+  }
+
+  getLegacyBlock(x: number, y: number, z: number): { id: number; data: number } | null {
+    if (!this.inBounds(x, y, z)) return null;
+    const encoded = this.legacyCells?.[this.index(x, y, z)] ?? 0;
+    return encoded ? { id: (encoded - 1) >> 4, data: (encoded - 1) & 15 } : null;
   }
 
   getBlock(x: number, y: number, z: number): string {

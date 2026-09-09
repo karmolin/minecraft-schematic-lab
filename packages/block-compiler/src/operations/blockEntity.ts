@@ -16,6 +16,7 @@ export function blockEntity(
   ctx.addBlockEntity({
     pos: [x, y, z],
     id: state.split('[')[0] ?? state,
+    block: state,
     data: op.data ?? {},
   });
 }

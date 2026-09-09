@@ -143,6 +143,27 @@ Base URL `http://127.0.0.1:8765`.
 
 ## BuildSpec shape
 
+### Importing an existing legacy schematic
+
+The viewer's **Import .schematic** button uploads a MCEdit/WorldEdit 6 file into a new
+session, preserving previous sessions. `import_schematic({ path: absolutePath })` is the MCP
+equivalent. HTTP: `POST /api/session/import?filename=house.schematic` with the raw binary file
+and `Content-Type: application/octet-stream`. Supports gzip/uncompressed Java NBT, up to 32 MiB
+and 2 million cells. Sponge `.schem` import/cross-version conversion is not supported yet.
+
+Read the imported spec using `get_current_build` or `/api/session/current` on the **same server
+as the browser where the user imported it**. Several app instances may have different ports;
+an empty current MCP session does not mean another viewer has no imported build. Keep the
+imported `base` and append ordinary operations at `/operations/-`, or update `/palette/bN`.
+Never replace the whole build with a newly generated approximation. A base has its own `size`,
+a palette of `{ block: paletteKey, legacy: { id, data, state } }`, and `[paletteIndex, count]`
+runs in X-fastest/YZX order. Increasing the outer `size` leaves imported coordinates fixed.
+The compiler restores the base first, then executes operations. The original ID/data survive
+only on unchanged cells; edits get newly mapped IDs. Typed tile/entity NBT and WorldEdit offsets
+are preserved. Entity NBT is not rendered; unsupported IDs produce visible placeholders/warnings.
+Use legacy `mcedit` export for imported builds. Save the self-contained spec with
+`GET /api/session/build-spec.json` or the viewer's **Save editable BuildSpec JSON** button.
+
 A BuildSpec is JSON with: `id`, `name`, `minecraftVersion` (e.g. `"1.21"`), `size`, optional `origin`,
 a `palette` (friendly key → block id like `minecraft:stone`), `operations`, and optional `metadata`.
 
@@ -208,8 +229,8 @@ context.
   rebuild is:
   1. `cd apps/web && node node_modules/vite/bin/vite.js build` (produces `apps/web/dist/`)
   2. `node scripts/bundle.mjs` (copies `apps/web/dist/` into `bundle/web/dist/` and rebundles the server)
-  On Windows where `pnpm` is not on PATH, run both steps via `D:\nodejs\node.exe` directly as shown.
-  Never claim a UI change is live until both steps have succeeded.
+     On Windows where `pnpm` is not on PATH, run both steps via `D:\nodejs\node.exe` directly as shown.
+     Never claim a UI change is live until both steps have succeeded.
 
 ## Desktop-app PATH caveat
 

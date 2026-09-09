@@ -11,6 +11,7 @@ import { registerRenderImageTool } from './tools/renderImageTool';
 import { registerExportSchematicTool } from './tools/exportSchematicTool';
 import { registerGitProjectTools } from './tools/gitProjectTool';
 import { registerSessionTools } from './tools/sessionTools';
+import { registerImportSchematicTool } from './tools/importSchematicTool';
 
 export function buildMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer({ name: 'minecraft-schematic-lab', version: APP_VERSION });
@@ -23,6 +24,7 @@ export function buildMcpServer(deps: McpDeps): McpServer {
   registerExportSchematicTool(server, deps);
   registerGitProjectTools(server, deps);
   registerSessionTools(server, deps);
+  registerImportSchematicTool(server, deps);
   return server;
 }
 

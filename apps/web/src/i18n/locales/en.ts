@@ -1,4 +1,17 @@
 export const en = {
+  import: {
+    title: 'Import',
+    button: 'Import .schematic',
+    busy: 'Importing…',
+    description: 'Open a MCEdit / WorldEdit 6 schematic in the 3D preview, then ask for changes.',
+    hint: 'Up to 32 MiB / 2 million cells. Opens a new build and keeps your previous session.',
+    invalidType:
+      'Please choose a legacy .schematic file. Sponge .schem import is not supported yet.',
+    invalidSize: 'Choose a non-empty file up to 32 MiB.',
+    restartRequired:
+      'The preview server is still running the old version. Restart start.bat, refresh this page, then import again.',
+    success: (name: string) => `Imported: ${name}. You can now ask to modify this build.`,
+  },
   packs: {
     title: 'Resource packs',
     select: 'Preview resource pack',
@@ -42,6 +55,7 @@ export const en = {
     total: (n: string) => `Total: ${n} blocks`,
   },
   export: {
+    saveSpec: 'Save editable BuildSpec JSON',
     title: 'Export',
     formatLabel: 'Format',
     formatMcedit: 'Legacy MCEdit .schematic (WorldEdit 6 / 1.12)',
@@ -63,6 +77,17 @@ export const en = {
 };
 
 export type Messages = {
+  import: {
+    title: string;
+    button: string;
+    busy: string;
+    description: string;
+    hint: string;
+    invalidType: string;
+    invalidSize: string;
+    restartRequired: string;
+    success: (name: string) => string;
+  };
   packs: {
     title: string;
     select: string;
@@ -85,6 +110,7 @@ export type Messages = {
   build: { title: string; empty: string; blocks: string; size: string };
   materials: { title: string; empty: string; total: (n: string) => string };
   export: {
+    saveSpec: string;
     title: string;
     formatLabel: string;
     formatMcedit: string;

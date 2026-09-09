@@ -78,6 +78,11 @@ export async function writeSpongeSchematic(
   volume: BlockVolume,
   options: WriteOptions = {},
 ): Promise<Buffer> {
+  if (spec.base?.source.format === 'mcedit') {
+    throw new Error(
+      '导入的旧版原理图请导出为 Legacy MCEdit .schematic，以保留原始 ID/data 和实体 NBT。跨版本转换暂不支持。',
+    );
+  }
   const version: SchematicVersion = options.version ?? 2;
   const blockEntities = options.blockEntities ?? [];
   const dataVersion = dataVersionFor(spec.minecraftVersion);
@@ -107,7 +112,10 @@ export async function writeSpongeSchematic(
 
   const beList: NbtNode = {
     type: 'list',
-    value: { type: 'compound', value: blockEntities.map((be) => blockEntityCompound(be, version).value) },
+    value: {
+      type: 'compound',
+      value: blockEntities.map((be) => blockEntityCompound(be, version).value),
+    },
   };
 
   let root: NbtNode;

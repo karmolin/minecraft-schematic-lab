@@ -3,11 +3,17 @@
   "version": "0.1.0",
   "type": "module",
   "packageManager": "pnpm@11.6.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "minecraft-schematic-lab": "./bundle/server.mjs"
   },
-  "files": ["bundle/", "README.md", "LICENSE"],
+  "files": [
+    "bundle/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:web": "pnpm --filter @minecraft-schematic-lab/web dev",
@@ -18,6 +24,7 @@
     "bundle": "pnpm build && node scripts/bundle.mjs",
     "test": "pnpm -r test",
     "test:e2e": "playwright test",
+    "test:import": "node --import tsx scripts/test-schematic-import.mjs",
     "test:resource-packs": "pnpm --filter @minecraft-schematic-lab/web build && node --import tsx scripts/test-resource-packs.mjs",
     "lint": "pnpm -r lint",
     "format": "prettier --write .",

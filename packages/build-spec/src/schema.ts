@@ -107,6 +107,51 @@ export const buildOperationSchema = z.discriminatedUnion('type', [
   blockEntityOpSchema,
 ]);
 
+/** Imported voxels are a compact, editable base; normal operations run on top. */
+export const importedBaseSchema = z.object({
+  size: z.object({
+    x: z.number().int().positive(),
+    y: z.number().int().positive(),
+    z: z.number().int().positive(),
+  }),
+  // Indices into this palette, run-length encoded in X-fastest/YZX order.
+  palette: z
+    .array(
+      z.object({
+        block: z.string().min(1),
+        legacy: z
+          .object({
+            id: z.number().int().min(0).max(4095),
+            data: z.number().int().min(0).max(15),
+            state: z.string(),
+          })
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(65535),
+  runs: z.array(z.tuple([z.number().int().nonnegative(), z.number().int().positive()])),
+  blockEntities: z
+    .array(
+      z.object({
+        pos: vec3,
+        id: z.string(),
+        block: z.string(),
+        nbt: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .default([]),
+  // Keep typed NBT, including long/byte/list types, for lossless legacy re-export.
+  entities: z.array(z.record(z.string(), z.unknown())).default([]),
+  source: z.object({
+    filename: z.string(),
+    format: z.literal('mcedit'),
+    worldOrigin: vec3.default([0, 0, 0]),
+    warnings: z.array(z.string()).default([]),
+    extraNbt: z.record(z.string(), z.unknown()).default({}),
+  }),
+});
+
 export const buildSpecSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -125,6 +170,7 @@ export const buildSpecSchema = z.object({
     .optional(),
   palette: z.record(z.string(), z.string()),
   operations: z.array(buildOperationSchema),
+  base: importedBaseSchema.optional(),
   metadata: z
     .object({
       prompt: z.string().optional(),

@@ -36,6 +36,7 @@ export interface BuildResult {
   blockCount: number;
   palette: string[];
   previewData: PreviewData;
+  importedFrom?: string;
 }
 
 export type ProjectMode = 'memory' | 'local' | 'git';
@@ -61,6 +62,9 @@ export interface CurrentBuildResponse {
   previewUrl: string;
   project: ProjectStatus;
 }
+
+/** Lightweight viewer polling response; imported voxel data stay on the server. */
+export type CurrentBuildSummary = Omit<CurrentBuildResponse, 'spec'> & { importedFrom?: string };
 
 export interface SessionSummary {
   sessionId: string;

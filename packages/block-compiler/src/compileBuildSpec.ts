@@ -17,6 +17,8 @@ export interface BlockEntity {
   pos: [number, number, number];
   id: string;
   data: Record<string, unknown>;
+  nbt?: Record<string, unknown>;
+  block?: string;
 }
 
 export interface CompileContext {
@@ -53,6 +55,10 @@ export function compileBuildSpec(input: unknown): CompileResult {
   }
   const spec = validation.data;
 
+  if (spec.size.x * spec.size.y * spec.size.z > 2_000_000) {
+    throw new BuildSpecError(['建筑体积超过 2,000,000 方块，请缩小选区。']);
+  }
+
   const volume = new BlockVolume(spec.size.x, spec.size.y, spec.size.z);
   const warnings: string[] = [];
   const blockEntities: BlockEntity[] = [];
@@ -63,9 +69,7 @@ export function compileBuildSpec(input: unknown): CompileResult {
       const mapped = spec.palette[key];
       const state = mapped ?? key;
       if (mapped === undefined && !BLOCK_STATE_PATTERN.test(key)) {
-        warnings.push(
-          `"${key}" is not a palette key or a valid block id; using it literally.`,
-        );
+        warnings.push(`"${key}" is not a palette key or a valid block id; using it literally.`);
       }
       if (!warnedStates.has(state) && !BLOCK_STATE_PATTERN.test(state)) {
         warnedStates.add(state);
@@ -77,12 +81,65 @@ export function compileBuildSpec(input: unknown): CompileResult {
       warnings.push(message);
     },
     addBlockEntity(entity: BlockEntity) {
+      for (let i = blockEntities.length - 1; i >= 0; i--) {
+        if (blockEntities[i]!.pos.every((n, axis) => n === entity.pos[axis]))
+          blockEntities.splice(i, 1);
+      }
       blockEntities.push(entity);
     },
   };
 
+  if (spec.base) {
+    const base = spec.base;
+    const count = base.size.x * base.size.y * base.size.z;
+    if (
+      count > 2_000_000 ||
+      base.runs.reduce((sum, run) => sum + run[1], 0) !== count ||
+      base.runs.some(([index]) => !base.palette[index])
+    ) {
+      throw new BuildSpecError([
+        'Imported base has invalid dimensions, palette indices or run lengths.',
+      ]);
+    }
+    warnings.push(...base.source.warnings);
+    let index = 0;
+    for (const [paletteIndex, length] of base.runs) {
+      const entry = base.palette[paletteIndex]!;
+      const state = ctx.resolveBlock(entry.block);
+      for (let n = 0; n < length; n++, index++) {
+        const x = index % base.size.x;
+        const z = Math.floor(index / base.size.x) % base.size.z;
+        const y = Math.floor(index / (base.size.x * base.size.z));
+        if (entry.legacy && entry.legacy.state === state) {
+          volume.setLegacyBlock(x, y, z, state, entry.legacy.id, entry.legacy.data);
+        } else if (state !== 'minecraft:air') volume.setBlock(x, y, z, state);
+      }
+    }
+    for (const entity of base.blockEntities) {
+      if (
+        volume.inBounds(...entity.pos) &&
+        volume.getBlock(...entity.pos).split('[')[0] === entity.block.split('[')[0]
+      ) {
+        blockEntities.push({
+          pos: entity.pos,
+          id: entity.id,
+          block: entity.block,
+          data: {},
+          nbt: entity.nbt,
+        });
+      }
+    }
+  }
+
   for (const op of spec.operations) {
     dispatch(volume, op, ctx);
+    // A later write removes an earlier tile entity, even if the block is changed back later.
+    for (let i = blockEntities.length - 1; i >= 0; i--) {
+      const entity = blockEntities[i]!;
+      const state = volume.getBlock(...entity.pos).split('[')[0];
+      const original = entity.block?.split('[')[0] ?? entity.id;
+      if (state === 'minecraft:air' || (original && state !== original)) blockEntities.splice(i, 1);
+    }
   }
 
   if (volume.outOfBoundsWrites > 0) {

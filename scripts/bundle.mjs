@@ -89,6 +89,10 @@ async function main() {
   //    config.ts resolves './web/dist' relative to server.mjs -> bundle/web/dist.
   await mkdir(dirname(webDistOut), { recursive: true });
   await cp(webDistSrc, webDistOut, { recursive: true });
+  await cp(
+    resolve(repoRoot, 'apps/server/src/schematic/data/LICENSE-minecraft-data'),
+    resolve(outDir, 'LICENSE-minecraft-data'),
+  );
 
   process.stdout.write(`\nBundle ready:\n  ${outFile}\n  ${webDistOut}\n`);
 }

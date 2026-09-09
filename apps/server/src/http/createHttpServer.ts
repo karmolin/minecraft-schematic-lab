@@ -23,7 +23,7 @@ export async function createHttpServer(
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    const status = statusCodeOf(error);
+    const status = (error as { statusCode?: number }).statusCode ?? statusCodeOf(error);
     reply.status(status).send({ error: messageOf(error) });
   });
 

@@ -84,6 +84,7 @@ The first run pulls the tool through `npx`; the 3D preview then opens at <http:/
 
 ## Using it
 
+- **Import an existing build** — click **Import .schematic** and choose a legacy MCEdit / WorldEdit 6 file. It opens in the 3D viewer as a new session, keeping your previous build. Ask for changes, then export it again. **Save editable BuildSpec JSON** downloads a self-contained base plus subsequent edits. Limits: 32 MiB per file and 2 million cells; gzip and uncompressed Java NBT are supported. Sponge `.schem` import and cross-version conversion are not supported yet.
 - **Change it** — "make the roof brick", "add two towers". The preview refreshes on its own.
 - **Export** — select **Legacy MCEdit .schematic** for WorldEdit 6 / old FAWE on Minecraft 1.12.x;
   select Sponge v2/v3 for modern WorldEdit. The browser export button and Claude both support all three.
@@ -196,6 +197,7 @@ Windows：
 
 ## 使用方法
 
+- **导入已有建筑** — 点击 **导入 .schematic**，选择 MCEdit / WorldEdit 6 原理图，即可在 Three.js 中查看，并通过对话继续修改、再次导出。导入会新建会话并保留原建筑，失败时保留当前预览。点击 **保存可编辑 BuildSpec JSON** 可保存完整底稿和后续修改。支持 gzip 压缩或未压缩 Java NBT，最大 32 MiB、200 万格；暂不支持导入 Sponge `.schem` 或跨版本转换。原始 ID/data、WorldEdit 偏移及实体 NBT 会保留；无法识别的 ID 显示占位方块和警告，生物、盔甲架等实体暂不显示。
 - **修改** — "把屋顶换成砖块"、"加两座塔楼"。预览会自动刷新。
 - **导出** — 选择 **Legacy MCEdit .schematic** 用于 WorldEdit 6 / 旧版 FAWE（Minecraft 1.12.x）；选择 Sponge v2/v3 用于现代 WorldEdit。浏览器导出按钮和 Claude 均支持全部三种格式。
 - **导入 Minecraft** — 将 `.schem` 文件放入存档的 `schematics` 文件夹，然后执行 `//schem load <名称>` 和 `//paste`。
@@ -204,15 +206,17 @@ Windows：
 
 ## 平台支持
 
-| 操作系统                         | CLI | 桌面应用 | 备注                                |
-| -------------------------------- | :-: | :------: | ----------------------------------- |
-| macOS（Intel / Apple Silicon）   | ✅  |    ✅    |                                     |
-| Windows 10/11（x64 / ARM64）     | ✅  |    ✅    | `npx` 需要 `cmd /c`（参见安装配置） |
-| Linux（x64 / ARM64，含 musl）    | ✅  |    —     | Linux 无桌面应用                    |
+| 操作系统                       | CLI | 桌面应用 | 备注                                |
+| ------------------------------ | :-: | :------: | ----------------------------------- |
+| macOS（Intel / Apple Silicon） | ✅  |    ✅    |                                     |
+| Windows 10/11（x64 / ARM64）   | ✅  |    ✅    | `npx` 需要 `cmd /c`（参见安装配置） |
+| Linux（x64 / ARM64，含 musl）  | ✅  |    —     | Linux 无桌面应用                    |
 
 所有平台均需 Node 22+；不支持 32 位系统。
 
 ## 开发
+
+导入功能的浏览器回归：先运行 `pnpm build`，再运行 `pnpm test:import`。测试使用随机空闲端口和独立会话，读取当前所选材质包，并检查文件选择、3D 预览、JSON 保存、修改和重新导出。
 
 ### Minecraft Java 1.12.2 材质包
 

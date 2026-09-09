@@ -1,6 +1,8 @@
 import { gzipSync } from 'node:zlib';
 import nbt from 'prismarine-nbt';
 import type { BlockEntity, BlockVolume } from '@minecraft-schematic-lab/block-compiler';
+import type { BuildSpec } from '@minecraft-schematic-lab/build-spec';
+import { mappedLegacyBlock } from './legacyBlocks';
 
 interface NbtNode {
   type: string;
@@ -149,6 +151,8 @@ function stairData(properties: Record<string, string>): number {
 }
 
 function legacyBlock(state: string): LegacyBlock | null {
+  const mapped = mappedLegacyBlock(state);
+  if (mapped) return mapped;
   const { name, properties } = parseState(state);
   if (SIMPLE_BLOCKS[name]) return SIMPLE_BLOCKS[name];
 
@@ -252,12 +256,20 @@ function legacyBlock(state: string): LegacyBlock | null {
 
 /** Refuse unsupported palette entries before changing a 1.12.2 session. */
 export function unsupportedLegacyBlocks(volume: BlockVolume): string[] {
-  return volume.getPalette().filter((state) => legacyBlock(state) === null);
+  const unsupported = new Set<string>();
+  const supported = new Map<string, boolean>();
+  volume.forEachYZX((x, y, z, state) => {
+    if (volume.getLegacyBlock(x, y, z)) return;
+    if (!supported.has(state)) supported.set(state, legacyBlock(state) !== null);
+    if (!supported.get(state)) unsupported.add(state);
+  });
+  return [...unsupported].sort();
 }
 
 function tileEntity(be: BlockEntity): NbtCompoundValue {
   const value: NbtCompoundValue = {
-    id: stringNode(be.id.replace(/^minecraft:/, '')),
+    ...(be.nbt as NbtCompoundValue | undefined),
+    id: stringNode(be.nbt ? be.id : be.id.replace(/^minecraft:/, '')),
     x: intNode(be.pos[0]),
     y: intNode(be.pos[1]),
     z: intNode(be.pos[2]),
@@ -274,14 +286,23 @@ function tileEntity(be: BlockEntity): NbtCompoundValue {
 export async function writeMcEditSchematic(
   volume: BlockVolume,
   blockEntities: BlockEntity[] = [],
+  spec?: BuildSpec,
 ): Promise<Buffer> {
+  if ([volume.x, volume.y, volume.z].some((dimension) => dimension > 32767)) {
+    throw new Error('Legacy .schematic dimensions must not exceed 32767 on any axis.');
+  }
   const blocks: number[] = [];
   const data: number[] = [];
   const addBlocks: number[] = [];
   const unsupported = new Set<string>();
+  const mapped = new Map<string, LegacyBlock | null>();
 
-  volume.forEachYZX((_x, _y, _z, state) => {
-    const block = legacyBlock(state);
+  volume.forEachYZX((x, y, z, state) => {
+    let block = volume.getLegacyBlock(x, y, z);
+    if (!block) {
+      if (!mapped.has(state)) mapped.set(state, legacyBlock(state));
+      block = mapped.get(state) ?? null;
+    }
     if (!block) {
       unsupported.add(state);
       blocks.push(0);
@@ -301,19 +322,20 @@ export async function writeMcEditSchematic(
   }
 
   const value: NbtCompoundValue = {
+    ...(spec?.base?.source.extraNbt as NbtCompoundValue | undefined),
     Materials: stringNode('Alpha'),
     Width: shortNode(volume.x),
     Height: shortNode(volume.y),
     Length: shortNode(volume.z),
-    WEOriginX: intNode(0),
-    WEOriginY: intNode(0),
-    WEOriginZ: intNode(0),
-    WEOffsetX: intNode(0),
-    WEOffsetY: intNode(0),
-    WEOffsetZ: intNode(0),
+    WEOriginX: intNode(spec?.base?.source.worldOrigin[0] ?? 0),
+    WEOriginY: intNode(spec?.base?.source.worldOrigin[1] ?? 0),
+    WEOriginZ: intNode(spec?.base?.source.worldOrigin[2] ?? 0),
+    WEOffsetX: intNode(spec?.origin?.x ?? 0),
+    WEOffsetY: intNode(spec?.origin?.y ?? 0),
+    WEOffsetZ: intNode(spec?.origin?.z ?? 0),
     Blocks: byteArrayNode(blocks.map(signedByte)),
     Data: byteArrayNode(data.map(signedByte)),
-    Entities: listNode([]),
+    Entities: listNode((spec?.base?.entities ?? []) as NbtCompoundValue[]),
     TileEntities: listNode(blockEntities.map(tileEntity)),
   };
 

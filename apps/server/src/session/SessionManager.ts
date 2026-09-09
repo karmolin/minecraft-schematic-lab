@@ -26,6 +26,8 @@ import { HttpError } from '../httpError';
 import { renderIsometric } from '../render/renderIsometric';
 import { unsupportedLegacyBlocks, writeMcEditSchematic } from '../schematic/writeMcEditSchematic';
 import { writeSpongeSchematic } from '../schematic/writeSpongeSchematic';
+import { readSchematic } from '../schematic/readSchematic';
+import { importedPreview } from '../schematic/importPreview';
 import type { SchematicFormat } from '../schematic/schematicTypes';
 import type { Session } from './types';
 import type { GitProjectService } from '../git/GitProjectService';
@@ -155,6 +157,7 @@ export class SessionManager {
         blockCount: result.blockCount,
         palette: result.palette,
         previewData: this.previewFor(session),
+        importedFrom: result.spec.base?.source.filename,
       };
     } catch (error) {
       if (error instanceof BuildSpecError) {
@@ -169,6 +172,24 @@ export class SessionManager {
           previewData: this.previewFor(session),
         };
       }
+      throw error;
+    }
+  }
+
+  importSchematic(buffer: Buffer, filename: string): BuildResult {
+    const spec = readSchematic(buffer, filename);
+    const validation = this.validate(spec);
+    if (!validation.valid) throw new HttpError(422, validation.errors.join('; '));
+    // Commit only after parsing and validation. Preserve existing sessions/projects.
+    const previous = this.currentId;
+    const session = this.createSession();
+    try {
+      const result = this.build(spec);
+      if (!result.valid) throw new HttpError(422, result.errors.join('; '));
+      return result;
+    } catch (error) {
+      this.sessions.delete(session.id);
+      this.currentId = previous;
       throw error;
     }
   }
@@ -368,8 +389,15 @@ export class SessionManager {
       'README.md': projectReadme(session),
       '.gitignore': 'node_modules/\n',
     });
-    const buffer = await this.schematicFor(session, 'sponge-v2');
-    writeFileSync(join(dir, `${safeFilename(session.spec.name || session.spec.id)}.schem`), buffer);
+    const legacy = /^1\.12(?:\.|$)/.test(session.spec.minecraftVersion);
+    const buffer = await this.schematicFor(session, legacy ? 'mcedit' : 'sponge-v2');
+    writeFileSync(
+      join(
+        dir,
+        `${safeFilename(session.spec.name || session.spec.id)}.${legacy ? 'schematic' : 'schem'}`,
+      ),
+      buffer,
+    );
   }
 
   private async schematicFor(
@@ -383,7 +411,7 @@ export class SessionManager {
     }
     const buffer =
       format === 'mcedit'
-        ? await writeMcEditSchematic(session.volume, session.blockEntities)
+        ? await writeMcEditSchematic(session.volume, session.blockEntities, session.spec)
         : await writeSpongeSchematic(session.spec, session.volume, {
             version: format === 'sponge-v3' ? 3 : 2,
             blockEntities: session.blockEntities,
@@ -394,6 +422,7 @@ export class SessionManager {
 
   private previewFor(session: Session): PreviewData {
     if (!session.volume) return { size: EMPTY_SIZE, instances: {} };
+    if (session.spec?.base) return importedPreview(session.volume);
     return {
       size: { x: session.volume.x, y: session.volume.y, z: session.volume.z },
       instances: session.volume.toInstanceGroups(),
