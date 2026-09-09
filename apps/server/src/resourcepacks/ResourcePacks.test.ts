@@ -76,6 +76,83 @@ afterEach(() => {
 });
 
 describe('Java 1.12.2 resource packs', () => {
+  it('resolves cobblestone stair rotations and petrified slabs through their legacy resources', () => {
+    const slab = (from: number[], to: number[]) => ({
+      textures: { all: 'blocks/planks_oak' },
+      elements: [{ from, to, faces }],
+    });
+    archive(
+      join(directory, 'pack.zip'),
+      packFiles({
+        'assets/minecraft/blockstates/stone_stairs.json': json({
+          variants: {
+            'facing=east,half=bottom,shape=straight': { model: 'stone_stairs' },
+            'facing=south,half=bottom,shape=straight': { model: 'stone_stairs', y: 90 },
+            'facing=west,half=bottom,shape=straight': { model: 'stone_stairs', y: 180 },
+            'facing=north,half=bottom,shape=straight': { model: 'stone_stairs', y: 270 },
+            'facing=north,half=top,shape=straight': { model: 'stone_stairs', x: 180, y: 270 },
+          },
+        }),
+        'assets/minecraft/models/block/stone_stairs.json': json({
+          textures: { all: 'blocks/cobblestone' },
+          elements: [
+            { from: [0, 0, 0], to: [16, 8, 16], faces },
+            { from: [8, 8, 0], to: [16, 16, 16], faces },
+          ],
+        }),
+        'assets/minecraft/textures/blocks/cobblestone.png': custom,
+        'assets/minecraft/blockstates/wood_old_slab.json': json({
+          variants: {
+            'half=bottom': { model: 'half_slab_oak' },
+            'half=top': { model: 'upper_slab_oak' },
+          },
+        }),
+        'assets/minecraft/blockstates/wood_old_double_slab.json': json({
+          variants: { normal: { model: 'oak_planks' } },
+        }),
+        'assets/minecraft/models/block/half_slab_oak.json': json(slab([0, 0, 0], [16, 8, 16])),
+        'assets/minecraft/models/block/upper_slab_oak.json': json(slab([0, 8, 0], [16, 16, 16])),
+        'assets/minecraft/textures/blocks/planks_oak.png': custom,
+      }),
+    );
+    const manager = new ResourcePackManager(directory, base),
+      info = packInfo(manager);
+    const states = [
+      ...['east', 'south', 'west', 'north'].map(
+        (facing) => `minecraft:cobblestone_stairs[half=bottom,shape=straight,facing=${facing}]`,
+      ),
+      'minecraft:cobblestone_stairs[half=top,shape=straight,facing=north]',
+      ...['bottom', 'top', 'double'].map((type) => `minecraft:petrified_oak_slab[type=${type}]`),
+    ];
+    const before = [...states];
+    const result = resolveAppearance(manager.resources(info.id, info.revision), states);
+    expect(states).toEqual(before);
+    expect(Object.keys(result.blocks)).toEqual(states);
+    for (const block of Object.values(result.blocks)) {
+      expect(block.source).toBe('pack');
+      expect(block.warning).toBeUndefined();
+    }
+    expect(states.slice(0, 5).map((s) => result.blocks[s]!.parts[0]!.y)).toEqual([
+      0, 90, 180, 270, 270,
+    ]);
+    expect(result.blocks[states[4]!]!.parts[0]!.x).toBe(180);
+    expect(result.blocks[states[0]!]!.parts[0]!.elements).toHaveLength(2);
+    expect(
+      states.slice(5).map((s) => {
+        const element = result.blocks[s]!.parts[0]!.elements[0]!;
+        return [element.from[1], element.to[1]];
+      }),
+    ).toEqual([
+      [0, 8],
+      [8, 16],
+      [0, 16],
+    ]);
+    expect(result.textures['assets/minecraft/textures/blocks/cobblestone.png']?.source).toBe(
+      'pack',
+    );
+    expect(result.textures['assets/minecraft/textures/blocks/planks_oak.png']?.source).toBe('pack');
+  });
+
   it('persists the choice across new managers and retains a missing preferred pack', () => {
     archive(join(directory, 'pack.zip'), packFiles());
     const first = new ResourcePackManager(directory, base),

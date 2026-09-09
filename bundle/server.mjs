@@ -3375,6 +3375,7 @@ var ALIASES = {
   grass: "grass",
   bricks: "brick_block",
   stone_bricks: "stonebrick",
+  cobblestone_stairs: "stone_stairs",
   mossy_stone_bricks: "mossy_stonebrick",
   cracked_stone_bricks: "cracked_stonebrick",
   chiseled_stone_bricks: "chiseled_stonebrick",
@@ -3453,6 +3454,8 @@ function legacyState(state) {
       cobblestone: "cobblestone",
       purpur: "purpur",
       oak: "oak",
+      // Legacy stone slab variant 2 (IDs 44/43), distinct from wooden slabs (126/125).
+      petrified_oak: "wood_old",
       spruce: "spruce",
       birch: "birch",
       jungle: "jungle",
